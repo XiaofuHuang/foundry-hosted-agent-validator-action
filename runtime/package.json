@@ -1,0 +1,9 @@
+{
+  "name": "foundry-hosted-agent-validator-runtime",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "@github/copilot": "1.0.83",
+    "yaml": "2.8.1"
+  }
+}

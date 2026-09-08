@@ -1,0 +1,22 @@
+name: Test publisher
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - name: Install test dependency
+        run: python3 -m pip install --disable-pip-version-check -r requirements-dev.txt
+      - name: Install locked action runtime
+        run: npm ci --prefix runtime --ignore-scripts --no-audit --no-fund
+      - name: Run tests
+        run: python3 -m pytest -q

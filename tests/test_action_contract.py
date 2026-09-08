@@ -56,7 +56,7 @@ def test_target_config_is_nested_evidence_not_copilot_configuration() -> None:
 def test_permissions_are_narrow() -> None:
     for forbidden in ("--yolo", "--allow-all", "--allow-all-tools", "--allow-all-paths"):
         assert forbidden not in ACTION
-    assert "--available-tools=view,grep,glob,edit" in ACTION
+    assert "--available-tools=view,grep,glob,edit,apply_patch,create" in ACTION
     assert "--available-tools=read,grep,glob,write" not in ACTION
     assert '--allow-tool="write($JSON_REPORT)"' in ACTION
     assert '--allow-tool="write($MARKDOWN_REPORT)"' in ACTION
@@ -65,7 +65,7 @@ def test_permissions_are_narrow() -> None:
     assert "--disable-builtin-mcps" in ACTION
     assert "--no-custom-instructions" in ACTION
     smoke = (ROOT / "scripts" / "smoke-cli.mjs").read_text(encoding="utf-8")
-    assert "--available-tools=view,grep,glob,edit" in smoke
+    assert "--available-tools=view,grep,glob,edit,apply_patch,create" in smoke
     assert "COPILOT_OFFLINE: \"true\"" in smoke
 
 

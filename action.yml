@@ -202,7 +202,7 @@ runs:
           -C "$SHADOW_ROOT" \
           --prompt "$prompt" \
           --add-dir "${{ github.action_path }}/skills/validate-foundry-ci" \
-          --available-tools=view,grep,glob,edit \
+          --available-tools=view,grep,glob,edit,apply_patch,create \
           --allow-tool="write($JSON_REPORT)" \
           --allow-tool="write($MARKDOWN_REPORT)" \
           --deny-tool=shell \

@@ -10,7 +10,7 @@ if (!fs.existsSync(binary)) {
 }
 
 const constrainedArguments = [
-  "--available-tools=view,grep,glob,edit",
+  "--available-tools=view,grep,glob,edit,apply_patch,create",
   "--deny-tool=shell",
   "--deny-tool=url",
   "--disable-builtin-mcps",

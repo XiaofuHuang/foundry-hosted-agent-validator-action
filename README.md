@@ -51,6 +51,9 @@ The Action pins Copilot CLI `1.0.83`, then clones the latest
 plugin, and invokes `/microsoft-foundry`. No validation skill is stored in this
 repository or copied into the user repository.
 
+If the runner does not already have Azure Developer CLI, the Action installs
+the latest `azd` required by the Microsoft skill. It does not sign in to Azure.
+
 It asks Copilot to inspect files statically and prohibits target execution,
 target dependency installation, Canvas, shell access, and Azure access.
 

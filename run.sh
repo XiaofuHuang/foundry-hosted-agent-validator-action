@@ -136,6 +136,9 @@ esac
 npm install --global --no-audit --no-fund @github/copilot@1.0.83
 plugin_repo="$RUNNER_TEMP/microsoft-azure-skills"
 git clone --depth 1 https://github.com/microsoft/azure-skills.git "$plugin_repo"
+if ! command -v azd > /dev/null 2>&1; then
+  curl -fsSL https://aka.ms/install-azd.sh | bash
+fi
 bash "$plugin_repo/skills/microsoft-foundry/scripts/check-and-setup-dependencies.sh"
 copilot plugin marketplace add "$plugin_repo"
 copilot plugin install azure@azure-skills

@@ -180,7 +180,6 @@ find "$output_root" -maxdepth 1 -type f \
 report_count=0
 overall_status="$copilot_status"
 while IFS= read -r -d '' markdown_report; do
-  json_report="${markdown_report%.md}.json"
   if [[ ! -f "$markdown_report" || -L "$markdown_report" || ! -s "$markdown_report" ]]; then
     overall_status=1
     continue
@@ -200,23 +199,6 @@ while IFS= read -r -d '' markdown_report; do
   mkdir -p "$report_stage"
   cp "$canonical_markdown" "$report_stage/"
 
-  json_valid=true
-  if [[ ! -f "$json_report" || -L "$json_report" || ! -s "$json_report" ]]; then
-    echo "::error::A Markdown report is missing its JSON companion"
-    overall_status=1
-    json_valid=false
-  else
-    canonical_json="$(realpath "$json_report")"
-    case "$canonical_json/" in
-      "$output_root/"*) cp "$canonical_json" "$report_stage/" ;;
-      *)
-        echo "::error::JSON report escaped outputPath"
-        overall_status=1
-        json_valid=false
-        ;;
-    esac
-  fi
-
   if [[ "${GITHUB_EVENT_NAME:-}" == "pull_request" ]]; then
     comment_file="$RUNNER_TEMP/foundry-validation-comment-$report_count.md"
     report_name="$(basename "$markdown_report")"
@@ -225,10 +207,6 @@ while IFS= read -r -d '' markdown_report; do
       echo
       echo "**Report:** \`$report_name\`"
       echo
-      if [[ "$json_valid" != "true" ]]; then
-        echo "**Warning:** The JSON companion report is missing or invalid."
-        echo
-      fi
       echo "[View workflow run]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)"
       echo
       sed $'s/@/@\u200B/g' "$markdown_report"
@@ -241,11 +219,14 @@ while IFS= read -r -d '' markdown_report; do
 done < "$reports_file"
 
 while IFS= read -r -d '' json_report; do
-  markdown_report="${json_report%.json}.md"
-  if [[ ! -f "$markdown_report" || -L "$markdown_report" || ! -s "$markdown_report" ]]; then
-    echo "::error::A JSON report is missing its Markdown companion"
-    overall_status=1
-  fi
+  canonical_json="$(realpath "$json_report")"
+  case "$canonical_json/" in
+    "$output_root/"*)
+      json_stage="$artifact_root/json-$(basename "$json_report" .json)"
+      mkdir -p "$json_stage"
+      cp "$canonical_json" "$json_stage/"
+      ;;
+  esac
 done < <(
   find "$output_root" -maxdepth 1 -type f \
     -name 'validation-*.json' -print0 | sort -z

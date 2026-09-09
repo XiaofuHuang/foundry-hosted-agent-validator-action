@@ -39,9 +39,11 @@ The validation workflow recursively finds every `azure.yaml` below
 Reports use its shared `outputPath`, the Action uploads all JSON/Markdown
 pairs, and each Markdown report creates a new PR comment.
 
-The Action uses the Copilot process result and generated report pairs as its
-status. It does not parse the validation workflow's batch outcome, so a partial
-batch may remain advisory when at least one report is generated.
+The Action uses the Copilot process result and generated Markdown reports as
+its status. JSON reports are uploaded when present but are not checked or
+required. It does not parse the validation workflow's batch outcome, so a
+partial batch may remain advisory when at least one Markdown report is
+generated.
 
 ## Inputs
 

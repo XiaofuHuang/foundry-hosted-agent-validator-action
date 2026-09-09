@@ -20,7 +20,10 @@ jobs:
           set -euo pipefail
           bash -n run.sh
           grep -F '@github/copilot@1.0.83' run.sh
+          grep -F 'git clone --depth 1 https://github.com/microsoft/azure-skills.git' run.sh
+          grep -F 'check-and-setup-dependencies.sh' run.sh
+          grep -F 'copilot plugin marketplace add "$plugin_repo"' run.sh
+          grep -F 'copilot plugin install azure@azure-skills' run.sh
           grep -F 'pull-requests: write' README.md
           grep -F 'copilot-requests: write' README.md
-          test -f skills/validate-foundry-ci/SKILL.md
-          test -f skills/validate-foundry-ci/references/default-rules.yaml
+          test ! -d skills

@@ -1,7 +1,7 @@
 # Microsoft Foundry Hosted Agent Validator
 
-A small composite GitHub Action that runs the Microsoft Foundry validation
-skill and posts the Markdown report on pull requests.
+A small composite GitHub Action that downloads the latest Microsoft Foundry
+skill at runtime and posts its Markdown report on pull requests.
 
 ## Usage
 
@@ -46,7 +46,11 @@ and Markdown reports under `.foundry/results/`.
 
 ## Scope
 
-The Action pins Copilot CLI `1.0.83` and bundles the reviewed validation skill.
+The Action pins Copilot CLI `1.0.83`, then clones the latest
+`microsoft/azure-skills`, runs its dependency bootstrap, installs its `azure`
+plugin, and invokes `/microsoft-foundry`. No validation skill is stored in this
+repository or copied into the user repository.
+
 It asks Copilot to inspect files statically and prohibits target execution,
 target dependency installation, Canvas, shell access, and Azure access.
 
@@ -54,4 +58,5 @@ This simplified version checks only that both report files exist. It does not
 schema-validate report contents and is intended as an advisory review, not a
 compliance or security gate.
 
-See [UPSTREAM.md](UPSTREAM.md) for skill provenance.
+Because the plugin is downloaded without a version pin, validation behavior can
+change when Microsoft publishes an update.

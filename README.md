@@ -18,6 +18,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: write
   copilot-requests: write
 
 jobs:
@@ -28,7 +29,7 @@ jobs:
       - id: foundry-validation
         uses: XiaofuHuang/foundry-hosted-agent-validator-action@<full-40-character-commit-sha>
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ github.token }}
           agent-path: .
       - if: always() && steps.foundry-validation.outputs.json-report != ''
         run: |
@@ -36,7 +37,7 @@ jobs:
           echo "Markdown: ${{ steps.foundry-validation.outputs.markdown-report }}"
 ```
 
-The caller must grant only `contents: read` and `copilot-requests: write`. Repository or organization Copilot policy must also permit GitHub Copilot CLI requests.
+For pull-request comments, the caller grants `contents: read`, `pull-requests: write`, and `copilot-requests: write`. Repository or organization Copilot policy must also permit GitHub Copilot CLI requests.
 
 > **Fork warning:** GitHub does not pass a writable token to untrusted fork pull requests. Do not work around this with `pull_request_target` while checking out or validating fork-controlled code. Run the action only on trusted code, or use a separately reviewed workflow that never combines privileged tokens with an untrusted checkout.
 
@@ -47,6 +48,7 @@ The caller must grant only `contents: read` and `copilot-requests: write`. Repos
 | `github-token` | Yes | — | Caller token with `copilot-requests: write`. |
 | `agent-path` | No | `.` | Hosted-agent root inside `GITHUB_WORKSPACE`. |
 | `copilot-cli-version` | No | `1.0.83` | Compatibility input. Any value other than the reviewed pin `1.0.83` is rejected. |
+| `comment-on-pr` | No | `true` | Create or update one validation report comment when invoked by a `pull_request` workflow. |
 
 The selected path must contain `azure.yaml`, and static parsing must find exactly one service whose `host` is `azure.ai.agent`.
 
@@ -67,6 +69,11 @@ Reports are the only target writes and are stored under:
 ```
 
 A failed `error` or `warning` rule fails the action. Recommendation failures and all `inconclusive` results are advisory. Missing or invalid reports always fail the action.
+
+When invoked by a `pull_request` event with `comment-on-pr: true`, the Action
+creates a PR comment containing the report and workflow run link. Each run
+creates a new comment. It posts a fail-closed message when no report can be
+published.
 
 ## Security model
 

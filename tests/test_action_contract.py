@@ -11,12 +11,18 @@ ACTION = (ROOT / "action.yml").read_text(encoding="utf-8")
 
 def test_action_metadata_contract() -> None:
     assert "name: Microsoft Foundry Hosted Agent Validator" in ACTION
-    for input_name in ("github-token:", "agent-path:", "copilot-cli-version:"):
+    for input_name in (
+        "github-token:",
+        "agent-path:",
+        "copilot-cli-version:",
+        "comment-on-pr:",
+    ):
         assert input_name in ACTION
     for output_name in ("json-report:", "markdown-report:", "conclusion:", "summary:"):
         assert output_name in ACTION
     assert re.search(r"github-token:\s*\n(?:.*\n){0,3}\s+required: true", ACTION)
     assert re.search(r"agent-path:\s*\n(?:.*\n){0,3}\s+default: \.", ACTION)
+    assert re.search(r"comment-on-pr:\s*\n(?:.*\n){0,3}\s+default: \"true\"", ACTION)
 
 
 def test_exact_tool_pin_and_isolation() -> None:
@@ -90,6 +96,15 @@ def test_outputs_are_emitted_only_after_verified_publication() -> None:
     assert "PUBLISH_OUTCOME: ${{ steps.publish.outcome }}" in output_block
     assert "--publication-state" in ACTION[publish:outputs]
     assert "--validation-state" in ACTION[publish:outputs]
+
+
+def test_pull_request_comment_is_owned_by_the_action() -> None:
+    assert "github.event_name == 'pull_request'" in ACTION
+    assert "inputs.comment-on-pr == 'true'" in ACTION
+    assert '${{ github.event.pull_request.number }}' in ACTION
+    assert '${{ github.api_url }}' in ACTION
+    assert '${{ inputs.github-token }}' in ACTION
+    assert '${{ github.action_path }}/scripts/comment_pr.py' in ACTION
 
 
 def test_workflow_uses_only_immutable_external_refs_and_never_invokes_action() -> None:

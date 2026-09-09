@@ -14,6 +14,10 @@ inputs:
     description: Copilot CLI package version. Only the reviewed version 1.0.83 is accepted.
     required: false
     default: 1.0.83
+  comment-on-pr:
+    description: Create or update a validation report comment for pull_request events.
+    required: false
+    default: "true"
 
 outputs:
   json-report:
@@ -38,6 +42,7 @@ runs:
       env:
         INPUT_GITHUB_TOKEN: ${{ inputs.github-token }}
         INPUT_COPILOT_VERSION: ${{ inputs.copilot-cli-version }}
+        INPUT_COMMENT_ON_PR: ${{ inputs.comment-on-pr }}
       run: |
         set -euo pipefail
         if [[ -z "$INPUT_GITHUB_TOKEN" ]]; then
@@ -46,6 +51,10 @@ runs:
         fi
         if [[ "$INPUT_COPILOT_VERSION" != "1.0.83" ]]; then
           echo "::error::copilot-cli-version must be exactly 1.0.83"
+          exit 1
+        fi
+        if [[ "$INPUT_COMMENT_ON_PR" != "true" && "$INPUT_COMMENT_ON_PR" != "false" ]]; then
+          echo "::error::comment-on-pr must be true or false"
           exit 1
         fi
     - name: Install locked isolated Copilot runtime
@@ -280,6 +289,29 @@ runs:
           exit "$output_status"
         fi
         exit 0
+
+    - name: Create or update pull-request report comment
+      if: always() && github.event_name == 'pull_request' && inputs.comment-on-pr == 'true'
+      shell: bash
+      env:
+        INPUT_GITHUB_TOKEN: ${{ inputs.github-token }}
+        REPORT_PATH: ${{ steps.outputs.outputs.markdown-report }}
+        VALIDATION_CONCLUSION: ${{ steps.outputs.outputs.conclusion }}
+        VALIDATION_SUMMARY: ${{ steps.outputs.outputs.summary }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        REPOSITORY: ${{ github.repository }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        GITHUB_API_URL: ${{ github.api_url }}
+      run: |
+        python3 "${{ github.action_path }}/scripts/comment_pr.py" \
+          --repository "$REPOSITORY" \
+          --pr-number "$PR_NUMBER" \
+          --token "$INPUT_GITHUB_TOKEN" \
+          --report-path "$REPORT_PATH" \
+          --conclusion "$VALIDATION_CONCLUSION" \
+          --summary "$VALIDATION_SUMMARY" \
+          --run-url "$RUN_URL" \
+          --api-url "$GITHUB_API_URL"
 
     - name: Restore shadow permissions and remove isolated runtime
       if: always()

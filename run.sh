@@ -113,15 +113,17 @@ done < <(
 )
 
 npm install --global --no-audit --no-fund @github/copilot@1.0.83
-source_repo="$RUNNER_TEMP/microsoft-azure-skills"
+source_repo="$RUNNER_TEMP/github-copilot-for-azure-source"
 skill_parent="$RUNNER_TEMP/foundry-validator-skills"
 skill_root="$skill_parent/validate-foundry-ci"
 git clone --depth 1 --filter=blob:none --sparse \
-  https://github.com/microsoft/azure-skills.git "$source_repo"
+  --branch "$VALIDATION_REF" \
+  https://github.com/microsoft/GitHub-Copilot-for-Azure.git "$source_repo"
 git -C "$source_repo" sparse-checkout set \
-  skills/microsoft-foundry/foundry-agent/validate
+  plugins/azure-skills/skills/microsoft-foundry/foundry-agent/validate
 mkdir -p "$skill_root"
-cp -R "$source_repo/skills/microsoft-foundry/foundry-agent/validate/." "$skill_root/"
+cp -R "$source_repo/plugins/azure-skills/skills/microsoft-foundry/foundry-agent/validate/." \
+  "$skill_root/"
 cp "$ACTION_PATH/skills/validate-foundry-ci/SKILL.md" "$skill_root/SKILL.md"
 copilot skill add "$skill_parent"
 
@@ -135,33 +137,6 @@ if [[ -z "$resolved_skill" || "$(realpath "$resolved_skill")" != "$(realpath "$s
   exit 1
 fi
 
-start_marker="$RUNNER_TEMP/foundry-validation-start"
-touch "$start_marker"
-prepared_results="$RUNNER_TEMP/foundry-validation-result-directories"
-: > "$prepared_results"
-
-while IFS= read -r -d '' azure_file; do
-  config_root="$(dirname "$azure_file")"
-  if [[ -L "$config_root/.foundry" || -L "$config_root/.foundry/results" ]]; then
-    echo "::error::.foundry and .foundry/results must not be symbolic links"
-    exit 1
-  fi
-  mkdir -p "$config_root/.foundry/results"
-  results_root="$(realpath "$config_root/.foundry/results")"
-  case "$results_root/" in
-    "$validate_root/"*) ;;
-    *)
-      echo "::error::report directory must stay inside validate-path"
-      exit 1
-      ;;
-  esac
-  printf '%s\0' "$results_root" >> "$prepared_results"
-done < <(
-  find "$validate_root" \
-    \( -name .git -o -name .foundry -o -name node_modules -o -name .venv \) \
-    -prune -o -type f -name azure.yaml -print0
-)
-
 if find "$validate_root" -type l -print -quit | grep -q .; then
   echo "::error::validate-path must not contain symbolic links"
   exit 1
@@ -171,19 +146,20 @@ find "$validate_root" \( -type f -o -type d \) -printf '%m %p\0' > "$permissions
 permissions_locked=true
 find "$validate_root" -type f -exec chmod a-w {} +
 find "$validate_root" -type d -exec chmod a-w {} +
-while IFS= read -r -d '' results_root; do
-  chmod u+rwx "$results_root"
-done < "$prepared_results"
 
-prompt="Use the /validate-foundry-ci skill to validate validatePath=$validate_root.
-Recursively discover and independently validate every azure.ai.agent service.
-Generate one canonical JSON and Markdown report pair per service under the
-directory containing its azure.yaml. Process all services before finishing."
+output_root="$RUNNER_TEMP/foundry-validation-output"
+mkdir -p "$output_root"
+prompt="Use the /validate-foundry-ci skill with validatePath=$validate_root and outputPath=$output_root.
+Run the downloaded validation workflow once, process every discovered hosted
+agent, write every report pair under outputPath, return its batch summary, then
+print the exact CI_BATCH_OUTCOME line required by the CI wrapper."
 
-copilot_status=0
+batch_output="$RUNNER_TEMP/foundry-validation-batch.txt"
+set +e
 copilot -C "$validate_root" \
   --prompt "$prompt" \
   --add-dir "$skill_root" \
+  --add-dir "$output_root" \
   --available-tools=view,grep,glob,edit,apply_patch,create \
   --allow-tool=write \
   --deny-tool=shell \
@@ -192,18 +168,28 @@ copilot -C "$validate_root" \
   --no-ask-user \
   --no-auto-update \
   --no-custom-instructions \
-  --silent || copilot_status=$?
+  --silent | tee "$batch_output"
+copilot_status="${PIPESTATUS[0]}"
+set -e
 
 reports_file="$RUNNER_TEMP/foundry-validation-reports.txt"
 artifact_root="$RUNNER_TEMP/foundry-validation-artifacts"
 mkdir -p "$artifact_root"
-find "$validate_root" -type f \
-  -path '*/.foundry/results/validation-*.md' \
-  -newer "$start_marker" -print0 |
+find "$output_root" -maxdepth 1 -type f \
+  -name 'validation-*.md' -print0 |
   sort -z > "$reports_file"
 
 report_count=0
 overall_status="$copilot_status"
+batch_outcome="$(
+  sed -n 's/^CI_BATCH_OUTCOME=\(completed\|partial\|no-reports\|invalid-input\|no-hosted-agents\)$/\1/p' \
+    "$batch_output" | tail -n 1
+)"
+if [[ "$batch_outcome" != "completed" ]]; then
+  echo "::error::Foundry validation batch outcome: ${batch_outcome:-missing}"
+  overall_status=1
+fi
+
 while IFS= read -r -d '' markdown_report; do
   json_report="${markdown_report%.md}.json"
   if [[ ! -f "$markdown_report" || -L "$markdown_report" || ! -s "$markdown_report" ]]; then
@@ -214,9 +200,9 @@ while IFS= read -r -d '' markdown_report; do
   report_count=$((report_count + 1))
   canonical_markdown="$(realpath "$markdown_report")"
   case "$canonical_markdown/" in
-    "$validate_root/"*) ;;
+    "$output_root/"*) ;;
     *)
-      echo "::error::Markdown report escaped validate-path"
+      echo "::error::Markdown report escaped outputPath"
       overall_status=1
       continue
       ;;
@@ -233,9 +219,9 @@ while IFS= read -r -d '' markdown_report; do
   else
     canonical_json="$(realpath "$json_report")"
     case "$canonical_json/" in
-      "$validate_root/"*) cp "$canonical_json" "$report_stage/" ;;
+      "$output_root/"*) cp "$canonical_json" "$report_stage/" ;;
       *)
-        echo "::error::JSON report escaped validate-path"
+        echo "::error::JSON report escaped outputPath"
         overall_status=1
         json_valid=false
         ;;
@@ -244,11 +230,11 @@ while IFS= read -r -d '' markdown_report; do
 
   if [[ "${GITHUB_EVENT_NAME:-}" == "pull_request" ]]; then
     comment_file="$RUNNER_TEMP/foundry-validation-comment-$report_count.md"
-    relative_report="$(realpath --relative-to "$workspace" "$markdown_report")"
+    report_name="$(basename "$markdown_report")"
     {
       echo "## Microsoft Foundry hosted-agent validation"
       echo
-      echo "**Report:** \`$relative_report\`"
+      echo "**Report:** \`$report_name\`"
       echo
       if [[ "$json_valid" != "true" ]]; then
         echo "**Warning:** The JSON companion report is missing or invalid."
@@ -259,11 +245,22 @@ while IFS= read -r -d '' markdown_report; do
       sed $'s/@/@\u200B/g' "$markdown_report"
     } > "$comment_file"
     if ! post_comment "$comment_file"; then
-      echo "::error::Failed to post PR comment for $relative_report"
+      echo "::error::Failed to post PR comment for $report_name"
       overall_status=1
     fi
   fi
 done < "$reports_file"
+
+while IFS= read -r -d '' json_report; do
+  markdown_report="${json_report%.json}.md"
+  if [[ ! -f "$markdown_report" || -L "$markdown_report" || ! -s "$markdown_report" ]]; then
+    echo "::error::A JSON report is missing its Markdown companion"
+    overall_status=1
+  fi
+done < <(
+  find "$output_root" -maxdepth 1 -type f \
+    -name 'validation-*.json' -print0 | sort -z
+)
 
 if [[ "$report_count" -eq 0 ]]; then
   echo "::error::No validation reports were produced"

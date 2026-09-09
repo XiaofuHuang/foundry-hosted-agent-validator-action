@@ -19,6 +19,7 @@ runs:
         INPUT_GITHUB_TOKEN: ${{ inputs.github-token }}
         INPUT_VALIDATE_PATH: ${{ inputs.validate-path }}
         ACTION_PATH: ${{ github.action_path }}
+        VALIDATION_REF: codex/foundry-validation-reports
       run: bash "${{ github.action_path }}/run.sh"
 
     - name: Upload Foundry validation reports

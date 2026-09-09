@@ -20,7 +20,11 @@ jobs:
           set -euo pipefail
           bash -n run.sh
           grep -F '@github/copilot@1.0.83' run.sh
-          grep -F 'skills/microsoft-foundry/foundry-agent/validate' run.sh
+          grep -F 'VALIDATION_REF:' action.yml
+          grep -F -- '--branch "$VALIDATION_REF"' run.sh
+          grep -F 'plugins/azure-skills/skills/microsoft-foundry/foundry-agent/validate' run.sh
+          grep -F 'outputPath=' run.sh
+          grep -F 'CI_BATCH_OUTCOME=' run.sh
           grep -F 'name: validate-foundry-ci' skills/validate-foundry-ci/SKILL.md
           grep -F 'copilot skill add "$skill_parent"' run.sh
           grep -F 'validate-foundry-ci must resolve to the downloaded temporary skill' run.sh

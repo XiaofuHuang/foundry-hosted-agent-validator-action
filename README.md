@@ -49,9 +49,10 @@ and Markdown reports under `.foundry/results/`.
 
 The Action pins Copilot CLI `1.0.83`, then sparsely downloads only
 `skills/microsoft-foundry/foundry-agent/validate/` from the latest
-`microsoft/azure-skills`. It creates a temporary `/validate-foundry-ci` wrapper
-on the runner. No validation skill is stored in this repository or copied into
-the user repository, and `azd` is not installed.
+`microsoft/azure-skills`. This repository contains only a small
+`validate-foundry-ci/SKILL.md` CI wrapper; it does not duplicate Microsoft's
+`validate.md`, rules, schemas, or report template. The Action combines them in
+runner temporary storage, and `azd` is not installed.
 
 It asks Copilot to inspect files statically and prohibits target execution,
 target dependency installation, Canvas, shell access, and Azure access.

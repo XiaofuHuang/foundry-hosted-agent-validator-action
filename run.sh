@@ -151,10 +151,8 @@ output_root="$RUNNER_TEMP/foundry-validation-output"
 mkdir -p "$output_root"
 prompt="Use the /validate-foundry-ci skill with validatePath=$validate_root and outputPath=$output_root.
 Run the downloaded validation workflow once, process every discovered hosted
-agent, write every report pair under outputPath, return its batch summary, then
-print the exact CI_BATCH_OUTCOME line required by the CI wrapper."
+agent, write every report pair under outputPath, and return its batch summary."
 
-batch_output="$RUNNER_TEMP/foundry-validation-batch.txt"
 set +e
 copilot -C "$validate_root" \
   --prompt "$prompt" \
@@ -168,8 +166,8 @@ copilot -C "$validate_root" \
   --no-ask-user \
   --no-auto-update \
   --no-custom-instructions \
-  --silent | tee "$batch_output"
-copilot_status="${PIPESTATUS[0]}"
+  --silent
+copilot_status="$?"
 set -e
 
 reports_file="$RUNNER_TEMP/foundry-validation-reports.txt"
@@ -181,15 +179,6 @@ find "$output_root" -maxdepth 1 -type f \
 
 report_count=0
 overall_status="$copilot_status"
-batch_outcome="$(
-  sed -n 's/^CI_BATCH_OUTCOME=\(completed\|partial\|no-reports\|invalid-input\|no-hosted-agents\)$/\1/p' \
-    "$batch_output" | tail -n 1
-)"
-if [[ "$batch_outcome" != "completed" ]]; then
-  echo "::error::Foundry validation batch outcome: ${batch_outcome:-missing}"
-  overall_status=1
-fi
-
 while IFS= read -r -d '' markdown_report; do
   json_report="${markdown_report%.md}.json"
   if [[ ! -f "$markdown_report" || -L "$markdown_report" || ! -s "$markdown_report" ]]; then

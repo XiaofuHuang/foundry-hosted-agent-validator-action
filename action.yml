@@ -6,15 +6,10 @@ inputs:
   github-token:
     description: GitHub token with Copilot requests and PR comment access.
     required: true
-  agent-path:
-    description: Hosted-agent root relative to the caller workspace.
+  validate-path:
+    description: Directory to recursively scan for hosted agents.
     required: false
     default: .
-  comment-on-pr:
-    description: Post a new report comment when triggered by a pull request.
-    required: false
-    default: "true"
-
 runs:
   using: composite
   steps:
@@ -22,10 +17,18 @@ runs:
       shell: bash
       env:
         INPUT_GITHUB_TOKEN: ${{ inputs.github-token }}
-        INPUT_AGENT_PATH: ${{ inputs.agent-path }}
-        INPUT_COMMENT_ON_PR: ${{ inputs.comment-on-pr }}
+        INPUT_VALIDATE_PATH: ${{ inputs.validate-path }}
         ACTION_PATH: ${{ github.action_path }}
       run: bash "${{ github.action_path }}/run.sh"
+
+    - name: Upload Foundry validation reports
+      if: always()
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: foundry-validation-reports
+        path: ${{ runner.temp }}/foundry-validation-artifacts/**
+        if-no-files-found: warn
+        retention-days: 7
 
 branding:
   icon: shield

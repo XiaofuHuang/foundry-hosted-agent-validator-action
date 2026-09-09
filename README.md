@@ -34,16 +34,18 @@ jobs:
           github-token: ${{ github.token }}
 ```
 
-Each pull-request run creates a new report comment. The Action also writes JSON
-and Markdown reports under `.foundry/results/`.
+The skill recursively finds every `azure.yaml` below `validate-path` and
+validates each `azure.ai.agent` service separately. The Action uploads all JSON
+and Markdown reports and creates one new PR comment for each Markdown report.
+The validation tree is made read-only during the run except for discovered
+`.foundry/results` directories.
 
 ## Inputs
 
 | Input | Default | Purpose |
 |---|---|---|
 | `github-token` | Required | Runs Copilot and posts PR comments |
-| `agent-path` | `.` | Directory containing `azure.yaml` |
-| `comment-on-pr` | `true` | Posts a report for `pull_request` events |
+| `validate-path` | `.` | Directory recursively searched for hosted agents |
 
 ## Scope
 

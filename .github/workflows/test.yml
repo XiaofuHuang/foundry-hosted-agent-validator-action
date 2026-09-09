@@ -24,6 +24,7 @@ jobs:
           grep -F 'name: validate-foundry-ci' skills/validate-foundry-ci/SKILL.md
           grep -F 'copilot skill add "$skill_parent"' run.sh
           grep -F 'validate-foundry-ci must resolve to the downloaded temporary skill' run.sh
+          grep -F -- '--allow-tool=write' run.sh
           ! grep -F 'azd' run.sh
           ! grep -F 'copilot plugin install' run.sh
           grep -F 'pull-requests: write' README.md

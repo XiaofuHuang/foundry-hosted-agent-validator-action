@@ -29,7 +29,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
-      - uses: XiaofuHuang/foundry-hosted-agent-validator-action@v4.4.0
+      - uses: XiaofuHuang/foundry-hosted-agent-validator-action@v4.4.1
         with:
           github-token: ${{ github.token }}
           rules-file: foundry/agent-validation-rules.yaml

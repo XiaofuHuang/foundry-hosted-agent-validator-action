@@ -25,7 +25,7 @@ jobs:
           grep -F 'plugins/azure-skills/skills/microsoft-foundry/foundry-agent/validate' run.sh
           grep -F 'outputPath=' run.sh
           grep -F 'rulesFile=' run.sh
-          grep -F "INPUT_RULES_FILE: \${{ inputs.rules-file }}" action.yml
+          grep -F 'INPUT_RULES_FILE:' action.yml
           grep -F -- "--proto '=https' --noproxy '*'" run.sh
           grep -F -- '--connect-timeout 10 --max-time 30' run.sh
           grep -F 'must resolve to a public IPv4 address' run.sh

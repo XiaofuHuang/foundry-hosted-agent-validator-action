@@ -29,9 +29,10 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
-      - uses: XiaofuHuang/foundry-hosted-agent-validator-action@v4.1.0
+      - uses: XiaofuHuang/foundry-hosted-agent-validator-action@v4.4.0
         with:
           github-token: ${{ github.token }}
+          rules-file: foundry/agent-validation-rules.yaml
 ```
 
 The validation workflow recursively finds every `azure.yaml` below
@@ -51,6 +52,22 @@ generated.
 |---|---|---|
 | `github-token` | Required | Runs Copilot and posts PR comments |
 | `validate-path` | `.` | Directory recursively searched for hosted agents |
+| `rules-file` | Empty | Local path relative to `validate-path`, or public HTTPS URL returning raw YAML |
+
+Examples:
+
+```yaml
+# Local rules committed in the repository
+rules-file: foundry/agent-validation-rules.yaml
+
+# Public remote rules; no authentication header is sent
+rules-file: https://raw.githubusercontent.com/owner/repo/main/rules.yaml
+```
+
+Local rules must resolve inside `validate-path` and cannot be symbolic links.
+Remote rules must be public raw content over HTTPS, resolve to a public IPv4
+address, return HTTP 200 without redirects, and are limited to 1 MiB and a
+30-second transfer.
 
 ## Scope
 

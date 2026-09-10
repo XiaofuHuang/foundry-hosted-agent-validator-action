@@ -84,6 +84,102 @@ if [[ ! -d "$validate_root" ]]; then
   exit 1
 fi
 
+rules_file=""
+rules_prompt=""
+rules_root=""
+if [[ -n "${INPUT_RULES_FILE:-}" ]]; then
+  if [[ "$INPUT_RULES_FILE" == https://* ]]; then
+    rules_root="$RUNNER_TEMP/foundry-validation-rules"
+    rules_file="$rules_root/custom-rules.yaml"
+    mkdir -p "$rules_root"
+    read -r rules_host rules_port rules_ip < <(
+      python3 - "$INPUT_RULES_FILE" <<'PY'
+import ipaddress
+import socket
+import sys
+import urllib.parse
+
+value = sys.argv[1]
+if not value.isascii():
+    raise SystemExit("Remote rules-file URL must be ASCII")
+parsed = urllib.parse.urlsplit(value)
+if parsed.scheme != "https" or not parsed.hostname:
+    raise SystemExit("Remote rules-file must use HTTPS")
+if parsed.username is not None or parsed.password is not None:
+    raise SystemExit("Remote rules-file URL must not contain credentials")
+host = parsed.hostname
+port = parsed.port or 443
+addresses = socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM)
+public = sorted(
+    {
+        address[4][0]
+        for address in addresses
+        if ipaddress.ip_address(address[4][0]).is_global
+    }
+)
+if not public:
+    raise SystemExit("Remote rules-file host must resolve to a public IPv4 address")
+print(host, port, public[0])
+PY
+    )
+    http_status="$(
+      curl --fail --silent --show-error \
+      --proto '=https' --noproxy '*' \
+      --resolve "$rules_host:$rules_port:$rules_ip" \
+      --connect-timeout 10 --max-time 30 \
+      --max-filesize 1048576 \
+      "$INPUT_RULES_FILE" \
+      --output "$rules_file" \
+      --write-out '%{http_code}'
+    )"
+    if [[ "$http_status" != "200" ]]; then
+      echo "::error::Remote rules-file must return HTTP 200 without redirects"
+      exit 1
+    fi
+  elif [[ "$INPUT_RULES_FILE" == *://* || "$INPUT_RULES_FILE" == /* ]]; then
+    echo "::error::rules-file must be relative to validate-path or use public HTTPS"
+    exit 1
+  else
+    rules_candidate="$validate_root/$INPUT_RULES_FILE"
+    rules_lexical="$(
+      python3 - "$rules_candidate" <<'PY'
+import os
+import sys
+
+print(os.path.abspath(sys.argv[1]))
+PY
+    )"
+    case "$rules_lexical/" in
+      "$validate_root/"*) ;;
+      *)
+        echo "::error::Local rules-file must stay inside validate-path"
+        exit 1
+        ;;
+    esac
+    if [[ -L "$rules_lexical" ]]; then
+      echo "::error::Local rules-file must not be a symbolic link"
+      exit 1
+    fi
+    rules_file="$(realpath -e "$rules_lexical")"
+    case "$rules_file/" in
+      "$validate_root/"*) ;;
+      *)
+        echo "::error::Local rules-file must resolve inside validate-path"
+        exit 1
+        ;;
+    esac
+    if [[ ! -f "$rules_file" || -L "$rules_file" ]]; then
+      echo "::error::Local rules-file must be a regular non-symbolic-link file"
+      exit 1
+    fi
+  fi
+  if [[ ! -s "$rules_file" ]]; then
+    echo "::error::rules-file must not be empty"
+    exit 1
+  fi
+  rules_prompt=" Use rulesFile=$rules_file as the explicit batch rules file."
+fi
+
 export COPILOT_HOME="$RUNNER_TEMP/foundry-validator-copilot-home"
 export COPILOT_AUTO_UPDATE=false
 export GITHUB_COPILOT_PROMPT_MODE_REPO_HOOKS=false
@@ -151,22 +247,30 @@ output_root="$RUNNER_TEMP/foundry-validation-output"
 mkdir -p "$output_root"
 prompt="Use the /validate-foundry-ci skill with validatePath=$validate_root and outputPath=$output_root.
 Run the downloaded validation workflow once, process every discovered hosted
-agent, write every report pair under outputPath, and return its batch summary."
+agent, write every report pair under outputPath, and return its batch summary.$rules_prompt"
 
 set +e
-copilot -C "$validate_root" \
-  --prompt "$prompt" \
-  --add-dir "$skill_root" \
-  --add-dir "$output_root" \
-  --available-tools=view,grep,glob,edit,apply_patch,create \
-  --allow-tool=write \
-  --deny-tool=shell \
-  --deny-tool=url \
-  --disable-builtin-mcps \
-  --no-ask-user \
-  --no-auto-update \
-  --no-custom-instructions \
+copilot_args=(
+  -C "$validate_root"
+  --prompt "$prompt"
+  --add-dir "$skill_root"
+  --add-dir "$output_root"
+)
+if [[ -n "$rules_root" ]]; then
+  copilot_args+=(--add-dir "$rules_root")
+fi
+copilot_args+=(
+  --available-tools=view,grep,glob,edit,apply_patch,create
+  --allow-tool=write
+  --deny-tool=shell
+  --deny-tool=url
+  --disable-builtin-mcps
+  --no-ask-user
+  --no-auto-update
+  --no-custom-instructions
   --silent
+)
+copilot "${copilot_args[@]}"
 copilot_status="$?"
 set -e
 

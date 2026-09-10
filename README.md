@@ -36,21 +36,26 @@ jobs:
 ```
 
 The Action finds every `azure.yaml` below `validate-path` in lexical order and
-runs the validation workflow serially for each unique containing directory.
+runs the validation workflow for each unique containing directory with at most
+three Copilot processes active at once.
 Each bounded invocation processes only the `azure.yaml` directly in that
 directory; nested files receive their own invocation.
 Every invocation receives one Action-owned UTC report ID and writes to an
-isolated temporary output directory. The Action then aggregates each complete
-JSON/Markdown pair into a shared `outputPath` in discovery order, globally
-normalizes service names, and rewrites each JSON `markdownPath` to its final
-path. It also normalizes every JSON and Markdown Agent root to the original
-invocation directory relative to `GITHUB_WORKSPACE` (or the original absolute
-workspace path when the invocation is the workspace root), preserving the rest
-of the Markdown unchanged.
+isolated temporary output directory, uses its own Copilot home and settings,
+and captures its process output and status separately. The isolated homes
+reference the same verified downloaded skill tree after the Action makes that
+tree read-only. After every process has finished successfully, the Action
+aggregates each complete JSON/Markdown pair into a shared `outputPath` in
+original discovery order, globally normalizes service names, and rewrites each
+JSON `markdownPath` to its final path. It also normalizes every JSON and
+Markdown Agent root to the original invocation directory relative to
+`GITHUB_WORKSPACE` (or the original absolute workspace path when the invocation
+is the workspace root), preserving the rest of the Markdown unchanged.
 
-The Action fails when a Copilot invocation fails, a report pair is incomplete
-or malformed for aggregation, merged-rules artifacts differ, or no reports are
-produced overall. It uploads all final JSON/Markdown pairs and one byte-identical
+The Action reaps all workers and fails without aggregating when any Copilot
+invocation fails. It also fails when a report pair is incomplete or malformed
+for aggregation, merged-rules artifacts differ, or no reports are produced
+overall. It uploads all final JSON/Markdown pairs and one byte-identical
 `agent-validation-<reportId>-rules.yaml`; each Markdown report is posted as a
 new PR comment.
 
@@ -81,9 +86,9 @@ When supplied, `rules-file` is passed to every bounded invocation and remains
 the highest-precedence rule source. Otherwise,
 `validate-path/.foundry/agent-validation-rules.yaml`, when present, is passed
 to every invocation as the root caller rules. Local caller rules are copied
-into Action-controlled temporary storage before the target tree is made
-read-only. Defaults still come from the downloaded skill. Matching rule IDs are
-replaced by the caller rule.
+into Action-controlled temporary storage, made read-only, and shared by all
+workers before the target tree is made read-only. Defaults still come from the
+downloaded skill. Matching rule IDs are replaced by the caller rule.
 
 ## Scope
 

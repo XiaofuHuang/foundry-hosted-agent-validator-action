@@ -24,9 +24,9 @@ jobs:
           grep -F 'VALIDATION_REF:' action.yml
           grep -F -- '--branch "$VALIDATION_REF"' run.sh
           grep -F 'plugins/azure-skills/skills/microsoft-foundry/foundry-agent/validate' run.sh
-          grep -F 'outputPath=' run.sh
-          grep -F 'workspacePath=' run.sh
-          grep -F 'rulesFile=' run.sh
+          grep -F 'outputPath=' scripts/run_invocations.py
+          grep -F 'workspacePath=' scripts/run_invocations.py
+          grep -F 'rulesFile=' scripts/run_invocations.py
           grep -F 'agent-validation-*-rules.yaml' run.sh
           grep -F 'INPUT_RULES_FILE:' action.yml
           grep -F -- "--proto '=https' --noproxy '*'" run.sh
@@ -41,21 +41,42 @@ jobs:
           grep -F "find \"\$validate_root\" -type f -name 'azure.yaml' -print0" run.sh
           grep -F 'LC_ALL=C sort -z' run.sh
           grep -F "report_id=\"\$(date -u +'%Y%m%dT%H%M%SZ')\"" run.sh
-          grep -F 'reportId=$report_id' run.sh
-          grep -F 'do not process nested azure.yaml files' run.sh
+          grep -F 'reportId={report_id}' scripts/run_invocations.py
+          grep -F 'do not process nested azure.yaml files' scripts/run_invocations.py
           grep -F 'Root agent-validation-rules.yaml must be a non-empty regular file' run.sh
           grep -F 'cp "$rules_file" "$rules_root/custom-rules.yaml"' run.sh
+          grep -F 'find "$rules_root" -type f -exec chmod a-w {} +' run.sh
           grep -F 'scripts/aggregate_reports.py' run.sh
+          grep -F 'scripts/run_invocations.py' run.sh
+          grep -F 'MAX_VALIDATION_WORKERS=3' run.sh
+          grep -F -- '--max-workers "$MAX_VALIDATION_WORKERS"' run.sh
+          grep -F 'MAX_WORKERS_LIMIT = 3' scripts/run_invocations.py
+          grep -F 'copilot-home' scripts/run_invocations.py
+          grep -F 'stdout.log' scripts/run_invocations.py
+          grep -F 'stderr.log' scripts/run_invocations.py
+          grep -F 'status_path=root / "status"' scripts/run_invocations.py
+          grep -F 'wait "$orchestrator_pid"' run.sh
+          grep -F 'if [[ "$orchestration_status" -ne 0 ]]' run.sh
+          grep -F "trap 'cancel_run 143' TERM" run.sh
+          grep -F 'kill -TERM "$orchestrator_pid"' run.sh
+          grep -F '_terminate_and_reap' scripts/run_invocations.py
+          grep -F 'start_new_session=os.name == "posix"' scripts/run_invocations.py
           grep -F 'invocation_agent_root="${invocation_path#"$workspace"/}"' run.sh
           grep -F -- '--agent-root "$invocation_agent_root"' run.sh
           grep -F 'skillCommit=$resolved_validation_commit' run.sh
-          grep -F -- '--allow-tool=write' run.sh
-          grep -F -- '--deny-tool=shell' run.sh
-          grep -F -- '--deny-tool=url' run.sh
-          grep -F -- '--disable-builtin-mcps' run.sh
-          grep -F -- '--no-custom-instructions' run.sh
+          grep -F -- '--available-tools=view,grep,glob,edit,apply_patch,create' scripts/run_invocations.py
+          grep -F -- '--allow-tool=write' scripts/run_invocations.py
+          grep -F -- '--deny-tool=shell' scripts/run_invocations.py
+          grep -F -- '--deny-tool=url' scripts/run_invocations.py
+          grep -F -- '--disable-builtin-mcps' scripts/run_invocations.py
+          grep -F -- '--no-ask-user' scripts/run_invocations.py
+          grep -F -- '--no-auto-update' scripts/run_invocations.py
+          grep -F -- '--no-custom-instructions' scripts/run_invocations.py
+          grep -F -- '--silent' scripts/run_invocations.py
           grep -F 'GITHUB_COPILOT_PROMPT_MODE_REPO_HOOKS=false' run.sh
           grep -F '"disableAllHooks":true' run.sh
+          grep -F '"disableAllHooks":true' scripts/run_invocations.py
+          grep -F 'find "$skill_parent" -type f -exec chmod a-w {} +' run.sh
           grep -F 'find "$validate_root" -type f -exec chmod a-w {} +' run.sh
           grep -F 'find "$validate_root" -type d -exec chmod a-w {} +' run.sh
           ! grep -F 'azd' run.sh

@@ -11,6 +11,7 @@ export GH_TOKEN="$INPUT_GITHUB_TOKEN"
 posted_comments=0
 permissions_locked=false
 permissions_file="$RUNNER_TEMP/foundry-validation-permissions"
+orchestrator_pid=""
 
 post_comment() {
   local body_file="$1"
@@ -70,6 +71,20 @@ finish() {
 }
 trap finish EXIT
 
+cancel_run() {
+  local exit_code="$1"
+  trap - HUP INT TERM
+  if [[ -n "$orchestrator_pid" ]] && kill -0 "$orchestrator_pid" 2>/dev/null; then
+    kill -TERM "$orchestrator_pid" 2>/dev/null || true
+    wait "$orchestrator_pid" 2>/dev/null || true
+    orchestrator_pid=""
+  fi
+  exit "$exit_code"
+}
+trap 'cancel_run 129' HUP
+trap 'cancel_run 130' INT
+trap 'cancel_run 143' TERM
+
 workspace="$(realpath "$GITHUB_WORKSPACE")"
 validate_root="$(realpath -m "$workspace/${INPUT_VALIDATE_PATH:-.}")"
 case "$validate_root/" in
@@ -85,7 +100,6 @@ if [[ ! -d "$validate_root" ]]; then
 fi
 
 rules_file=""
-rules_prompt=""
 rules_root=""
 rules_kind=""
 if [[ -n "${INPUT_RULES_FILE:-}" ]]; then
@@ -181,7 +195,8 @@ PY
   fi
 fi
 
-export COPILOT_HOME="$RUNNER_TEMP/foundry-validator-copilot-home"
+copilot_template_home="$RUNNER_TEMP/foundry-validator-copilot-template-home"
+export COPILOT_HOME="$copilot_template_home"
 export COPILOT_AUTO_UPDATE=false
 export GITHUB_COPILOT_PROMPT_MODE_REPO_HOOKS=false
 mkdir -p "$COPILOT_HOME"
@@ -262,7 +277,8 @@ if [[ -n "$rules_file" ]]; then
     cp "$rules_file" "$rules_root/custom-rules.yaml"
     rules_file="$rules_root/custom-rules.yaml"
   fi
-  rules_prompt=" Use rulesFile=$rules_file as the $rules_kind batch rules file."
+  find "$rules_root" -type f -exec chmod a-w {} +
+  find "$rules_root" -type d -exec chmod a-w {} +
 fi
 
 invocations_file="$RUNNER_TEMP/foundry-validation-invocations.txt"
@@ -288,80 +304,97 @@ output_root="$RUNNER_TEMP/foundry-validation-output"
 invocation_root="$RUNNER_TEMP/foundry-validation-invocations"
 aggregate_state="$RUNNER_TEMP/foundry-validation-aggregate-state.json"
 report_id="$(date -u +'%Y%m%dT%H%M%SZ')"
+MAX_VALIDATION_WORKERS=3
 mkdir -p "$output_root"
 mkdir -p "$invocation_root"
 echo "Validation report ID: $report_id"
+
+find "$skill_parent" -type f -exec chmod a-w {} +
+find "$skill_parent" -type d -exec chmod a-w {} +
+
+orchestration_args=(
+  python3 "$ACTION_PATH/scripts/run_invocations.py"
+  --invocations-file "$invocations_file"
+  --invocation-root "$invocation_root"
+  --template-home "$copilot_template_home"
+  --skill-root "$skill_root"
+  --report-id "$report_id"
+  --max-workers "$MAX_VALIDATION_WORKERS"
+)
+if [[ -n "$rules_root" ]]; then
+  orchestration_args+=(
+    --rules-root "$rules_root"
+    --rules-file "$rules_file"
+    --rules-kind "$rules_kind"
+  )
+fi
+
+set +e
+"${orchestration_args[@]}" &
+orchestrator_pid="$!"
+wait "$orchestrator_pid"
+orchestration_status="$?"
+orchestrator_pid=""
+set -e
+
+if [[ "$orchestration_status" -ne 0 ]]; then
+  invocation_index=0
+  while IFS= read -r -d '' invocation_path; do
+    invocation_index=$((invocation_index + 1))
+    invocation_worker="$invocation_root/$(printf '%06d' "$invocation_index")"
+    copilot_status="not-started"
+    if [[ -f "$invocation_worker/status" ]]; then
+      read -r copilot_status < "$invocation_worker/status"
+    fi
+    invocation_status="copilot-failed"
+    if [[ "$copilot_status" == "0" ]]; then
+      invocation_status="success"
+    fi
+    if [[ "$invocation_path" == "$validate_root" ]]; then
+      invocation_display="."
+    else
+      invocation_display="${invocation_path#"$validate_root"/}"
+    fi
+    echo "Validation invocation $invocation_index: path=$invocation_display status=$invocation_status copilotStatus=$copilot_status aggregationStatus=not-run reports=0 skillCommit=$resolved_validation_commit"
+  done < "$invocations_file"
+  echo "::error::At least one isolated Copilot validation invocation failed"
+  exit 1
+fi
 
 overall_status=0
 invocation_index=0
 while IFS= read -r -d '' invocation_path; do
   invocation_index=$((invocation_index + 1))
-  invocation_output="$invocation_root/$(printf '%06d' "$invocation_index")"
-  mkdir -p "$invocation_output"
-  prompt="Use the /validate-foundry-ci skill with workspacePath=$invocation_path, outputPath=$invocation_output, and reportId=$report_id.
-Run the downloaded validation workflow once for only the azure.yaml directly
-under workspacePath; do not process nested azure.yaml files because the Action
-schedules their containing directories separately. Process every hosted agent
-service in that file in skill-defined order, write every report pair under
-outputPath, and return its batch summary.$rules_prompt"
-
-  copilot_args=(
-    -C "$invocation_path"
-    --prompt "$prompt"
-    --add-dir "$skill_root"
-    --add-dir "$invocation_output"
-  )
-  if [[ -n "$rules_root" ]]; then
-    copilot_args+=(--add-dir "$rules_root")
-  fi
-  copilot_args+=(
-    --available-tools=view,grep,glob,edit,apply_patch,create
-    --allow-tool=write
-    --deny-tool=shell
-    --deny-tool=url
-    --disable-builtin-mcps
-    --no-ask-user
-    --no-auto-update
-    --no-custom-instructions
-    --silent
-  )
-
-  set +e
-  copilot "${copilot_args[@]}"
-  copilot_status="$?"
-  set -e
-
+  invocation_worker="$invocation_root/$(printf '%06d' "$invocation_index")"
+  invocation_output="$invocation_worker/output"
+  read -r copilot_status < "$invocation_worker/status"
   invocation_status="success"
   invocation_report_count=0
   aggregate_status="not-run"
-  if [[ "$copilot_status" -ne 0 ]]; then
-    invocation_status="copilot-failed"
-    overall_status=1
+
+  set +e
+  if [[ "$invocation_path" == "$workspace" ]]; then
+    invocation_agent_root="$workspace"
   else
-    set +e
-    if [[ "$invocation_path" == "$workspace" ]]; then
-      invocation_agent_root="$workspace"
-    else
-      invocation_agent_root="${invocation_path#"$workspace"/}"
-    fi
-    invocation_report_count="$(
-      python3 "$ACTION_PATH/scripts/aggregate_reports.py" \
-        --source "$invocation_output" \
-        --output "$output_root" \
-        --state "$aggregate_state" \
-        --report-id "$report_id" \
-        --agent-root "$invocation_agent_root"
-    )"
-    aggregate_status="$?"
-    set -e
-    if [[ "$aggregate_status" -ne 0 ||
-          ! "$invocation_report_count" =~ ^[0-9]+$ ]]; then
-      invocation_status="aggregation-failed"
-      invocation_report_count=0
-      overall_status=1
-    elif [[ "$invocation_report_count" -eq 0 ]]; then
-      invocation_status="no-hosted-reports"
-    fi
+    invocation_agent_root="${invocation_path#"$workspace"/}"
+  fi
+  invocation_report_count="$(
+    python3 "$ACTION_PATH/scripts/aggregate_reports.py" \
+      --source "$invocation_output" \
+      --output "$output_root" \
+      --state "$aggregate_state" \
+      --report-id "$report_id" \
+      --agent-root "$invocation_agent_root"
+  )"
+  aggregate_status="$?"
+  set -e
+  if [[ "$aggregate_status" -ne 0 ||
+        ! "$invocation_report_count" =~ ^[0-9]+$ ]]; then
+    invocation_status="aggregation-failed"
+    invocation_report_count=0
+    overall_status=1
+  elif [[ "$invocation_report_count" -eq 0 ]]; then
+    invocation_status="no-hosted-reports"
   fi
 
   if [[ "$invocation_path" == "$validate_root" ]]; then

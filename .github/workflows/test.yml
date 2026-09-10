@@ -19,6 +19,7 @@ jobs:
         run: |
           set -euo pipefail
           bash -n run.sh
+          python3 -m unittest discover -s tests -v
           grep -F '@github/copilot@1.0.83' run.sh
           grep -F 'VALIDATION_REF:' action.yml
           grep -F -- '--branch "$VALIDATION_REF"' run.sh
@@ -37,7 +38,24 @@ jobs:
           grep -F 'name: validate-foundry-ci' skills/validate-foundry-ci/SKILL.md
           grep -F 'copilot skill add "$skill_parent"' run.sh
           grep -F 'validate-foundry-ci must resolve to the downloaded temporary skill' run.sh
+          grep -F "find \"\$validate_root\" -type f -name 'azure.yaml' -print0" run.sh
+          grep -F 'LC_ALL=C sort -z' run.sh
+          grep -F "report_id=\"\$(date -u +'%Y%m%dT%H%M%SZ')\"" run.sh
+          grep -F 'reportId=$report_id' run.sh
+          grep -F 'do not process nested azure.yaml files' run.sh
+          grep -F 'Root agent-validation-rules.yaml must be a non-empty regular file' run.sh
+          grep -F 'cp "$rules_file" "$rules_root/custom-rules.yaml"' run.sh
+          grep -F 'scripts/aggregate_reports.py' run.sh
+          grep -F 'skillCommit=$resolved_validation_commit' run.sh
           grep -F -- '--allow-tool=write' run.sh
+          grep -F -- '--deny-tool=shell' run.sh
+          grep -F -- '--deny-tool=url' run.sh
+          grep -F -- '--disable-builtin-mcps' run.sh
+          grep -F -- '--no-custom-instructions' run.sh
+          grep -F 'GITHUB_COPILOT_PROMPT_MODE_REPO_HOOKS=false' run.sh
+          grep -F '"disableAllHooks":true' run.sh
+          grep -F 'find "$validate_root" -type f -exec chmod a-w {} +' run.sh
+          grep -F 'find "$validate_root" -type d -exec chmod a-w {} +' run.sh
           ! grep -F 'azd' run.sh
           ! grep -F 'copilot plugin install' run.sh
           grep -F 'pull-requests: write' README.md

@@ -35,17 +35,21 @@ jobs:
           rules-file: foundry/agent-validation-rules.yaml
 ```
 
-The validation workflow recursively finds every `azure.yaml` below
-`validate-path` and validates each `azure.ai.agent` service separately.
-Reports use its shared `outputPath`, the Action uploads all JSON/Markdown
-pairs and the merged `agent-validation-<reportId>-rules.yaml`, and each
-Markdown report is posted unchanged as a new PR comment.
+The Action finds every `azure.yaml` below `validate-path` in lexical order and
+runs the validation workflow serially for each unique containing directory.
+Each bounded invocation processes only the `azure.yaml` directly in that
+directory; nested files receive their own invocation.
+Every invocation receives one Action-owned UTC report ID and writes to an
+isolated temporary output directory. The Action then aggregates each complete
+JSON/Markdown pair into a shared `outputPath` in discovery order, globally
+normalizes service names, rewrites each JSON `markdownPath` to its final path,
+and preserves the matching Markdown unchanged.
 
-The Action uses the Copilot process result and generated Markdown reports as
-its status. JSON reports are uploaded when present but are not checked or
-required. It does not parse the validation workflow's batch outcome, so a
-partial batch may remain advisory when at least one Markdown report is
-generated.
+The Action fails when a Copilot invocation fails, a report pair is incomplete
+or malformed for aggregation, merged-rules artifacts differ, or no reports are
+produced overall. It uploads all final JSON/Markdown pairs and one byte-identical
+`agent-validation-<reportId>-rules.yaml`; each Markdown report is posted
+unchanged as a new PR comment.
 
 ## Inputs
 
@@ -70,8 +74,13 @@ Remote rules must be public raw content over HTTPS, resolve to a public IPv4
 address, return HTTP 200 without redirects, and are limited to 1 MiB and a
 30-second transfer.
 
-When supplied, `rules-file` is merged over workspace custom rules and default
-rules. Matching rule IDs are replaced by the caller rule.
+When supplied, `rules-file` is passed to every bounded invocation and remains
+the highest-precedence rule source. Otherwise,
+`validate-path/.foundry/agent-validation-rules.yaml`, when present, is passed
+to every invocation as the root caller rules. Local caller rules are copied
+into Action-controlled temporary storage before the target tree is made
+read-only. Defaults still come from the downloaded skill. Matching rule IDs are
+replaced by the caller rule.
 
 ## Scope
 
@@ -85,9 +94,11 @@ runner temporary storage, and `azd` is not installed.
 It asks Copilot to inspect files statically and prohibits target execution,
 target dependency installation, Canvas, shell access, and Azure access.
 
-This simplified version checks only that both report files exist. It does not
-schema-validate report contents and is intended as an advisory review, not a
-compliance or security gate.
+The trusted Action orchestration parses generated JSON only to verify report
+pairing and aggregation metadata. It does not schema-validate results or
+independently verify rule completeness; the experimental E2E verifier measures
+those skill outcomes. This remains an advisory review, not a compliance or
+security gate.
 
 The runtime source is controlled by the single `VALIDATION_REF` value in
 `action.yml`. This experimental branch uses

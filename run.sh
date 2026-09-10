@@ -87,7 +87,9 @@ fi
 rules_file=""
 rules_prompt=""
 rules_root=""
+rules_kind=""
 if [[ -n "${INPUT_RULES_FILE:-}" ]]; then
+  rules_kind="explicit"
   if [[ "$INPUT_RULES_FILE" == https://* ]]; then
     rules_root="$RUNNER_TEMP/foundry-validation-rules"
     rules_file="$rules_root/custom-rules.yaml"
@@ -177,7 +179,6 @@ PY
     echo "::error::rules-file must not be empty"
     exit 1
   fi
-  rules_prompt=" Use rulesFile=$rules_file as the explicit batch rules file."
 fi
 
 export COPILOT_HOME="$RUNNER_TEMP/foundry-validator-copilot-home"
@@ -242,51 +243,142 @@ if find "$validate_root" -type l -print -quit | grep -q .; then
   exit 1
 fi
 
+if [[ -z "$rules_file" ]]; then
+  root_rules="$validate_root/.foundry/agent-validation-rules.yaml"
+  if [[ -e "$root_rules" ]]; then
+    if [[ ! -f "$root_rules" || ! -s "$root_rules" ]]; then
+      echo "::error::Root agent-validation-rules.yaml must be a non-empty regular file"
+      exit 1
+    fi
+    rules_file="$(realpath -e "$root_rules")"
+    rules_kind="root"
+  fi
+fi
+
+if [[ -n "$rules_file" ]]; then
+  if [[ -z "$rules_root" ]]; then
+    rules_root="$RUNNER_TEMP/foundry-validation-rules"
+    mkdir -p "$rules_root"
+    cp "$rules_file" "$rules_root/custom-rules.yaml"
+    rules_file="$rules_root/custom-rules.yaml"
+  fi
+  rules_prompt=" Use rulesFile=$rules_file as the $rules_kind batch rules file."
+fi
+
+invocations_file="$RUNNER_TEMP/foundry-validation-invocations.txt"
+: > "$invocations_file"
+previous_dir=""
+while IFS= read -r -d '' azure_yaml; do
+  invocation_path="${azure_yaml%/azure.yaml}"
+  if [[ "$invocation_path" != "$previous_dir" ]]; then
+    printf '%s\0' "$invocation_path" >> "$invocations_file"
+    previous_dir="$invocation_path"
+  fi
+done < <(
+  find "$validate_root" -type f -name 'azure.yaml' -print0 |
+    LC_ALL=C sort -z
+)
+
 find "$validate_root" \( -type f -o -type d \) -printf '%m %p\0' > "$permissions_file"
 permissions_locked=true
 find "$validate_root" -type f -exec chmod a-w {} +
 find "$validate_root" -type d -exec chmod a-w {} +
 
 output_root="$RUNNER_TEMP/foundry-validation-output"
+invocation_root="$RUNNER_TEMP/foundry-validation-invocations"
+aggregate_state="$RUNNER_TEMP/foundry-validation-aggregate-state.json"
+report_id="$(date -u +'%Y%m%dT%H%M%SZ')"
 mkdir -p "$output_root"
-prompt="Use the /validate-foundry-ci skill with workspacePath=$validate_root and outputPath=$output_root.
-Run the downloaded validation workflow once, process every discovered hosted
-agent, write every report pair under outputPath, and return its batch summary.$rules_prompt"
+mkdir -p "$invocation_root"
+echo "Validation report ID: $report_id"
 
-set +e
-copilot_args=(
-  -C "$validate_root"
-  --prompt "$prompt"
-  --add-dir "$skill_root"
-  --add-dir "$output_root"
-)
-if [[ -n "$rules_root" ]]; then
-  copilot_args+=(--add-dir "$rules_root")
-fi
-copilot_args+=(
-  --available-tools=view,grep,glob,edit,apply_patch,create
-  --allow-tool=write
-  --deny-tool=shell
-  --deny-tool=url
-  --disable-builtin-mcps
-  --no-ask-user
-  --no-auto-update
-  --no-custom-instructions
-  --silent
-)
-copilot "${copilot_args[@]}"
-copilot_status="$?"
-set -e
+overall_status=0
+invocation_index=0
+while IFS= read -r -d '' invocation_path; do
+  invocation_index=$((invocation_index + 1))
+  invocation_output="$invocation_root/$(printf '%06d' "$invocation_index")"
+  mkdir -p "$invocation_output"
+  prompt="Use the /validate-foundry-ci skill with workspacePath=$invocation_path, outputPath=$invocation_output, and reportId=$report_id.
+Run the downloaded validation workflow once for only the azure.yaml directly
+under workspacePath; do not process nested azure.yaml files because the Action
+schedules their containing directories separately. Process every hosted agent
+service in that file in skill-defined order, write every report pair under
+outputPath, and return its batch summary.$rules_prompt"
+
+  copilot_args=(
+    -C "$invocation_path"
+    --prompt "$prompt"
+    --add-dir "$skill_root"
+    --add-dir "$invocation_output"
+  )
+  if [[ -n "$rules_root" ]]; then
+    copilot_args+=(--add-dir "$rules_root")
+  fi
+  copilot_args+=(
+    --available-tools=view,grep,glob,edit,apply_patch,create
+    --allow-tool=write
+    --deny-tool=shell
+    --deny-tool=url
+    --disable-builtin-mcps
+    --no-ask-user
+    --no-auto-update
+    --no-custom-instructions
+    --silent
+  )
+
+  set +e
+  copilot "${copilot_args[@]}"
+  copilot_status="$?"
+  set -e
+
+  invocation_status="success"
+  invocation_report_count=0
+  aggregate_status="not-run"
+  if [[ "$copilot_status" -ne 0 ]]; then
+    invocation_status="copilot-failed"
+    overall_status=1
+  else
+    set +e
+    invocation_report_count="$(
+      python3 "$ACTION_PATH/scripts/aggregate_reports.py" \
+        --source "$invocation_output" \
+        --output "$output_root" \
+        --state "$aggregate_state" \
+        --report-id "$report_id"
+    )"
+    aggregate_status="$?"
+    set -e
+    if [[ "$aggregate_status" -ne 0 ||
+          ! "$invocation_report_count" =~ ^[0-9]+$ ]]; then
+      invocation_status="aggregation-failed"
+      invocation_report_count=0
+      overall_status=1
+    elif [[ "$invocation_report_count" -eq 0 ]]; then
+      invocation_status="no-hosted-reports"
+    fi
+  fi
+
+  if [[ "$invocation_path" == "$validate_root" ]]; then
+    invocation_display="."
+  else
+    invocation_display="${invocation_path#"$validate_root"/}"
+  fi
+  echo "Validation invocation $invocation_index: path=$invocation_display status=$invocation_status copilotStatus=$copilot_status aggregationStatus=$aggregate_status reports=$invocation_report_count skillCommit=$resolved_validation_commit"
+done < "$invocations_file"
 
 reports_file="$RUNNER_TEMP/foundry-validation-reports.txt"
 artifact_root="$RUNNER_TEMP/foundry-validation-artifacts"
 mkdir -p "$artifact_root"
-find "$output_root" -maxdepth 1 -type f \
-  -name 'validation-*.md' -print0 |
-  sort -z > "$reports_file"
+: > "$reports_file"
+if [[ -f "$aggregate_state" ]]; then
+  while IFS= read -r normalized_name; do
+    printf '%s\0' \
+      "$output_root/validation-$report_id-$normalized_name.md" \
+      >> "$reports_file"
+  done < <(jq -r '.usedNames[]' "$aggregate_state")
+fi
 
 report_count=0
-overall_status="$copilot_status"
 while IFS= read -r -d '' markdown_report; do
   if [[ ! -f "$markdown_report" || -L "$markdown_report" || ! -s "$markdown_report" ]]; then
     overall_status=1

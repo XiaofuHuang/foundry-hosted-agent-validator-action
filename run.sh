@@ -245,7 +245,7 @@ find "$validate_root" -type d -exec chmod a-w {} +
 
 output_root="$RUNNER_TEMP/foundry-validation-output"
 mkdir -p "$output_root"
-prompt="Use the /validate-foundry-ci skill with validatePath=$validate_root and outputPath=$output_root.
+prompt="Use the /validate-foundry-ci skill with workspacePath=$validate_root and outputPath=$output_root.
 Run the downloaded validation workflow once, process every discovered hosted
 agent, write every report pair under outputPath, and return its batch summary.$rules_prompt"
 
@@ -304,18 +304,8 @@ while IFS= read -r -d '' markdown_report; do
   cp "$canonical_markdown" "$report_stage/"
 
   if [[ "${GITHUB_EVENT_NAME:-}" == "pull_request" ]]; then
-    comment_file="$RUNNER_TEMP/foundry-validation-comment-$report_count.md"
     report_name="$(basename "$markdown_report")"
-    {
-      echo "## Microsoft Foundry hosted-agent validation"
-      echo
-      echo "**Report:** \`$report_name\`"
-      echo
-      echo "[View workflow run]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)"
-      echo
-      sed $'s/@/@\u200B/g' "$markdown_report"
-    } > "$comment_file"
-    if ! post_comment "$comment_file"; then
+    if ! post_comment "$markdown_report"; then
       echo "::error::Failed to post PR comment for $report_name"
       overall_status=1
     fi
@@ -334,6 +324,20 @@ while IFS= read -r -d '' json_report; do
 done < <(
   find "$output_root" -maxdepth 1 -type f \
     -name 'validation-*.json' -print0 | sort -z
+)
+
+while IFS= read -r -d '' merged_rules; do
+  canonical_rules="$(realpath "$merged_rules")"
+  case "$canonical_rules/" in
+    "$output_root/"*)
+      rules_stage="$artifact_root/rules"
+      mkdir -p "$rules_stage"
+      cp "$canonical_rules" "$rules_stage/"
+      ;;
+  esac
+done < <(
+  find "$output_root" -maxdepth 1 -type f \
+    -name 'agent-validation-*-rules.yaml' -print0 | sort -z
 )
 
 if [[ "$report_count" -eq 0 ]]; then

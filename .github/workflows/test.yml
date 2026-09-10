@@ -24,7 +24,9 @@ jobs:
           grep -F -- '--branch "$VALIDATION_REF"' run.sh
           grep -F 'plugins/azure-skills/skills/microsoft-foundry/foundry-agent/validate' run.sh
           grep -F 'outputPath=' run.sh
+          grep -F 'workspacePath=' run.sh
           grep -F 'rulesFile=' run.sh
+          grep -F 'agent-validation-*-rules.yaml' run.sh
           grep -F 'INPUT_RULES_FILE:' action.yml
           grep -F -- "--proto '=https' --noproxy '*'" run.sh
           grep -F -- '--connect-timeout 10 --max-time 30' run.sh

@@ -4,11 +4,12 @@ description: Run the Microsoft Foundry hosted-agent validation workflow in headl
 ---
 
 Read the runtime-downloaded `validate.md` and `references/` files beside this
-wrapper. Run that workflow once with the prompt's `validatePath` as its supplied
-input-code root and the prompt's `outputPath` as its shared report directory.
+wrapper. Run that workflow once with the prompt's `workspacePath` as its
+workspace and the prompt's `outputPath` as its shared report directory.
 When the prompt includes `rulesFile`, pass that resolved file to the workflow
-as its explicit batch rules file. Otherwise, let the workflow select rules
-using its documented precedence.
+as `customCallerRules`, the highest-precedence source merged over workspace
+custom rules and default rules. Otherwise, let the workflow merge rules using
+its documented precedence.
 Do not duplicate, replace, or reinterpret its discovery, rule-selection,
 validation, report-formatting, or batch-summary instructions.
 

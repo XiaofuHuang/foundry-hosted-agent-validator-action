@@ -38,7 +38,8 @@ jobs:
 The validation workflow recursively finds every `azure.yaml` below
 `validate-path` and validates each `azure.ai.agent` service separately.
 Reports use its shared `outputPath`, the Action uploads all JSON/Markdown
-pairs, and each Markdown report creates a new PR comment.
+pairs and the merged `agent-validation-<reportId>-rules.yaml`, and each
+Markdown report is posted unchanged as a new PR comment.
 
 The Action uses the Copilot process result and generated Markdown reports as
 its status. JSON reports are uploaded when present but are not checked or
@@ -51,7 +52,7 @@ generated.
 | Input | Default | Purpose |
 |---|---|---|
 | `github-token` | Required | Runs Copilot and posts PR comments |
-| `validate-path` | `.` | Directory recursively searched for hosted agents |
+| `validate-path` | `.` | Passed to the validation workflow as `workspacePath` |
 | `rules-file` | Empty | Local path relative to `validate-path`, or public HTTPS URL returning raw YAML |
 
 Examples:
@@ -68,6 +69,9 @@ Local rules must resolve inside `validate-path` and cannot be symbolic links.
 Remote rules must be public raw content over HTTPS, resolve to a public IPv4
 address, return HTTP 200 without redirects, and are limited to 1 MiB and a
 30-second transfer.
+
+When supplied, `rules-file` is merged over workspace custom rules and default
+rules. Matching rule IDs are replaced by the caller rule.
 
 ## Scope
 

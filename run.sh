@@ -215,6 +215,10 @@ skill_root="$skill_parent/validate-foundry-ci"
 git clone --depth 1 --filter=blob:none --sparse \
   --branch "$VALIDATION_REF" \
   https://github.com/microsoft/GitHub-Copilot-for-Azure.git "$source_repo"
+resolved_validation_commit="$(
+  git -C "$source_repo" rev-parse --verify "HEAD^{commit}"
+)"
+echo "Resolved validation skill source commit: $resolved_validation_commit"
 git -C "$source_repo" sparse-checkout set \
   plugins/azure-skills/skills/microsoft-foundry/foundry-agent/validate
 mkdir -p "$skill_root"

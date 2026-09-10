@@ -1,6 +1,6 @@
 # Microsoft Foundry Hosted Agent Validator
 
-A small composite GitHub Action that downloads the latest Microsoft Foundry
+A small composite GitHub Action that downloads configured Microsoft Foundry
 hosted-agent validation files at runtime and posts the Markdown report on pull
 requests.
 
@@ -90,5 +90,7 @@ schema-validate report contents and is intended as an advisory review, not a
 compliance or security gate.
 
 The runtime source is controlled by the single `VALIDATION_REF` value in
-`action.yml`. Change that value to `main` when the validation update is
-published.
+`action.yml`. This experimental branch uses
+`fix/validation-batch-completeness`, and `run.sh` logs the exact resolved source
+commit so E2E runs can be reproduced. Change `VALIDATION_REF` to `main` when the
+validation update is published.

@@ -24,7 +24,7 @@ runs:
         INPUT_VALIDATE_PATH: ${{ inputs.validate-path }}
         INPUT_RULES_FILE: ${{ inputs.rules-file }}
         ACTION_PATH: ${{ github.action_path }}
-        VALIDATION_REF: codex/foundry-validation-reports
+        VALIDATION_REF: fix/validation-batch-completeness
       run: bash "${{ github.action_path }}/run.sh"
 
     - name: Upload Foundry validation reports

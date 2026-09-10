@@ -339,12 +339,18 @@ outputPath, and return its batch summary.$rules_prompt"
     overall_status=1
   else
     set +e
+    if [[ "$invocation_path" == "$workspace" ]]; then
+      invocation_agent_root="$workspace"
+    else
+      invocation_agent_root="${invocation_path#"$workspace"/}"
+    fi
     invocation_report_count="$(
       python3 "$ACTION_PATH/scripts/aggregate_reports.py" \
         --source "$invocation_output" \
         --output "$output_root" \
         --state "$aggregate_state" \
-        --report-id "$report_id"
+        --report-id "$report_id" \
+        --agent-root "$invocation_agent_root"
     )"
     aggregate_status="$?"
     set -e

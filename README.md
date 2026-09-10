@@ -42,14 +42,17 @@ directory; nested files receive their own invocation.
 Every invocation receives one Action-owned UTC report ID and writes to an
 isolated temporary output directory. The Action then aggregates each complete
 JSON/Markdown pair into a shared `outputPath` in discovery order, globally
-normalizes service names, rewrites each JSON `markdownPath` to its final path,
-and preserves the matching Markdown unchanged.
+normalizes service names, and rewrites each JSON `markdownPath` to its final
+path. It also normalizes every JSON and Markdown Agent root to the original
+invocation directory relative to `GITHUB_WORKSPACE` (or the original absolute
+workspace path when the invocation is the workspace root), preserving the rest
+of the Markdown unchanged.
 
 The Action fails when a Copilot invocation fails, a report pair is incomplete
 or malformed for aggregation, merged-rules artifacts differ, or no reports are
 produced overall. It uploads all final JSON/Markdown pairs and one byte-identical
-`agent-validation-<reportId>-rules.yaml`; each Markdown report is posted
-unchanged as a new PR comment.
+`agent-validation-<reportId>-rules.yaml`; each Markdown report is posted as a
+new PR comment.
 
 ## Inputs
 

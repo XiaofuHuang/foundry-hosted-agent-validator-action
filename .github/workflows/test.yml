@@ -46,6 +46,8 @@ jobs:
           grep -F 'Root agent-validation-rules.yaml must be a non-empty regular file' run.sh
           grep -F 'cp "$rules_file" "$rules_root/custom-rules.yaml"' run.sh
           grep -F 'scripts/aggregate_reports.py' run.sh
+          grep -F 'invocation_agent_root="${invocation_path#"$workspace"/}"' run.sh
+          grep -F -- '--agent-root "$invocation_agent_root"' run.sh
           grep -F 'skillCommit=$resolved_validation_commit' run.sh
           grep -F -- '--allow-tool=write' run.sh
           grep -F -- '--deny-tool=shell' run.sh

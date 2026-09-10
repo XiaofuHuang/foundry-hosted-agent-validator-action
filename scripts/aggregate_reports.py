@@ -102,6 +102,10 @@ def _validate_pairs(
             raise AggregationError(
                 f"Report JSON has no string target.serviceName: {json_path}"
             )
+        if not isinstance(target.get("agentRoot"), str):
+            raise AggregationError(
+                f"Report JSON has no string target.agentRoot: {json_path}"
+            )
         declared_markdown = report.get("markdownPath")
         if not isinstance(declared_markdown, str):
             raise AggregationError(f"Report JSON has no string markdownPath: {json_path}")
@@ -126,8 +130,47 @@ def _next_name(base: str, used_names: set[str]) -> str:
     return f"{base}-{suffix}"
 
 
+def _rewrite_markdown_agent_root(
+    markdown_path: Path, original_agent_root: str, stable_agent_root: str
+) -> bytes:
+    try:
+        markdown = markdown_path.read_bytes()
+        original = original_agent_root.encode("utf-8")
+        stable = stable_agent_root.encode("utf-8")
+    except (OSError, UnicodeError) as error:
+        raise AggregationError(
+            f"Cannot read report Markdown {markdown_path}: {error}"
+        ) from error
+
+    prefix = b"**Agent root:** "
+    suffix = b"<br>"
+    lines = markdown.splitlines(keepends=True)
+    matches: list[tuple[int, bytes, bytes]] = []
+    for index, line in enumerate(lines):
+        content = line.rstrip(b"\r\n")
+        ending = line[len(content) :]
+        if content.startswith(prefix):
+            matches.append((index, content, ending))
+    if len(matches) != 1:
+        raise AggregationError(
+            f"Report Markdown must contain exactly one Agent root field: {markdown_path}"
+        )
+
+    index, content, ending = matches[0]
+    if content != prefix + original + suffix:
+        raise AggregationError(
+            f"Report Markdown Agent root does not match its JSON pair: {markdown_path}"
+        )
+    lines[index] = prefix + stable + suffix + ending
+    return b"".join(lines)
+
+
 def aggregate_invocation(
-    source: Path, output: Path, state_path: Path, report_id: str
+    source: Path,
+    output: Path,
+    state_path: Path,
+    report_id: str,
+    agent_root: str,
 ) -> int:
     source = source.resolve()
     output = output.resolve()
@@ -136,6 +179,13 @@ def aggregate_invocation(
         raise AggregationError("Invocation and aggregate output directories must differ")
     if not source.is_dir():
         raise AggregationError(f"Invocation output directory does not exist: {source}")
+    if (
+        not agent_root
+        or agent_root in {".", "./"}
+        or "\n" in agent_root
+        or "\r" in agent_root
+    ):
+        raise AggregationError("Stable agent root must identify the original workspace")
 
     state = _load_state(state_path, report_id)
     pairs = _validate_pairs(source, report_id)
@@ -166,7 +216,7 @@ def aggregate_invocation(
     output.mkdir(parents=True, exist_ok=True)
     state_path.parent.mkdir(parents=True, exist_ok=True)
     used_names = set(state["usedNames"])
-    planned: list[tuple[Path, Path, dict[str, Any], str]] = []
+    planned: list[tuple[dict[str, Any], bytes, str]] = []
     for json_path, markdown_path, report in pairs:
         base = normalize_service_name(report["target"]["serviceName"])
         final_name = _next_name(base, used_names)
@@ -178,8 +228,14 @@ def aggregate_invocation(
                 f"Aggregate report path already exists for serviceName {final_name}"
             )
         rewritten = dict(report)
+        rewritten_target = dict(report["target"])
+        rewritten_target["agentRoot"] = agent_root
+        rewritten["target"] = rewritten_target
         rewritten["markdownPath"] = str(final_markdown.resolve())
-        planned.append((json_path, markdown_path, rewritten, final_name))
+        rewritten_markdown = _rewrite_markdown_agent_root(
+            markdown_path, report["target"]["agentRoot"], agent_root
+        )
+        planned.append((rewritten, rewritten_markdown, final_name))
 
     staging = Path(tempfile.mkdtemp(prefix=".aggregate-", dir=output))
     created: list[Path] = []
@@ -190,7 +246,7 @@ def aggregate_invocation(
             shutil.copyfile(source_rules, staged_rules)
 
         staged_pairs: list[tuple[Path, Path, Path, Path]] = []
-        for _, markdown_path, report, final_name in planned:
+        for report, markdown, final_name in planned:
             final_json = output / f"validation-{report_id}-{final_name}.json"
             final_markdown = output / f"validation-{report_id}-{final_name}.md"
             staged_json = staging / final_json.name
@@ -199,7 +255,7 @@ def aggregate_invocation(
                 json.dumps(report, ensure_ascii=False, indent=2) + "\n",
                 encoding="utf-8",
             )
-            shutil.copyfile(markdown_path, staged_markdown)
+            staged_markdown.write_bytes(markdown)
             staged_pairs.append(
                 (staged_json, final_json, staged_markdown, final_markdown)
             )
@@ -215,7 +271,7 @@ def aggregate_invocation(
 
         next_state = {
             "reportId": report_id,
-            "usedNames": state["usedNames"] + [item[3] for item in planned],
+            "usedNames": state["usedNames"] + [item[2] for item in planned],
             "reportCount": state["reportCount"] + len(planned),
         }
         state_temp = state_path.with_name(f".{state_path.name}.tmp")
@@ -243,6 +299,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--state", type=Path, required=True)
     parser.add_argument("--report-id", required=True)
+    parser.add_argument("--agent-root", required=True)
     return parser.parse_args()
 
 
@@ -250,7 +307,7 @@ def main() -> int:
     args = _parse_args()
     try:
         report_count = aggregate_invocation(
-            args.source, args.output, args.state, args.report_id
+            args.source, args.output, args.state, args.report_id, args.agent_root
         )
     except AggregationError as error:
         print(f"Report aggregation failed: {error}", file=sys.stderr)

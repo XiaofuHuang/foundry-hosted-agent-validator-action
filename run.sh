@@ -71,16 +71,16 @@ finish() {
 trap finish EXIT
 
 workspace="$(realpath "$GITHUB_WORKSPACE")"
-validate_root="$(realpath -m "$workspace/${INPUT_VALIDATE_PATH:-.}")"
-case "$validate_root/" in
+agent_root="$(realpath -m "$workspace/${INPUT_AGENT_PATH:-.}")"
+case "$agent_root/" in
   "$workspace/"*) ;;
   *)
-    echo "::error::validate-path must stay inside GITHUB_WORKSPACE"
+    echo "::error::agent-path must stay inside GITHUB_WORKSPACE"
     exit 1
     ;;
 esac
-if [[ ! -d "$validate_root" ]]; then
-  echo "::error::validate-path must be a directory"
+if [[ ! -d "$agent_root" ]]; then
+  echo "::error::agent-path must be a directory"
   exit 1
 fi
 
@@ -137,10 +137,10 @@ PY
       exit 1
     fi
   elif [[ "$INPUT_RULES_FILE" == *://* || "$INPUT_RULES_FILE" == /* ]]; then
-    echo "::error::rules-file must be relative to validate-path or use public HTTPS"
+    echo "::error::rules-file must be relative to agent-path or use public HTTPS"
     exit 1
   else
-    rules_candidate="$validate_root/$INPUT_RULES_FILE"
+    rules_candidate="$agent_root/$INPUT_RULES_FILE"
     rules_lexical="$(
       python3 - "$rules_candidate" <<'PY'
 import os
@@ -150,9 +150,9 @@ print(os.path.abspath(sys.argv[1]))
 PY
     )"
     case "$rules_lexical/" in
-      "$validate_root/"*) ;;
+      "$agent_root/"*) ;;
       *)
-        echo "::error::Local rules-file must stay inside validate-path"
+        echo "::error::Local rules-file must stay inside agent-path"
         exit 1
         ;;
     esac
@@ -162,9 +162,9 @@ PY
     fi
     rules_file="$(realpath -e "$rules_lexical")"
     case "$rules_file/" in
-      "$validate_root/"*) ;;
+      "$agent_root/"*) ;;
       *)
-        echo "::error::Local rules-file must resolve inside validate-path"
+        echo "::error::Local rules-file must resolve inside agent-path"
         exit 1
         ;;
     esac
@@ -177,7 +177,7 @@ PY
     echo "::error::rules-file must not be empty"
     exit 1
   fi
-  rules_prompt=" Use rulesFile=$rules_file as the explicit batch rules file."
+  rules_prompt=" Use rulesFile=$rules_file as the explicit caller rules file."
 fi
 
 export COPILOT_HOME="$RUNNER_TEMP/foundry-validator-copilot-home"
@@ -233,25 +233,29 @@ if [[ -z "$resolved_skill" || "$(realpath "$resolved_skill")" != "$(realpath "$s
   exit 1
 fi
 
-if find "$validate_root" -type l -print -quit | grep -q .; then
-  echo "::error::validate-path must not contain symbolic links"
+if find "$agent_root" -type l -print -quit | grep -q .; then
+  echo "::error::agent-path must not contain symbolic links"
   exit 1
 fi
 
-find "$validate_root" \( -type f -o -type d \) -printf '%m %p\0' > "$permissions_file"
+find "$agent_root" \( -type f -o -type d \) -printf '%m %p\0' > "$permissions_file"
 permissions_locked=true
-find "$validate_root" -type f -exec chmod a-w {} +
-find "$validate_root" -type d -exec chmod a-w {} +
+find "$agent_root" -type f -exec chmod a-w {} +
+find "$agent_root" -type d -exec chmod a-w {} +
 
 output_root="$RUNNER_TEMP/foundry-validation-output"
 mkdir -p "$output_root"
-prompt="Use the /validate-foundry-ci skill with workspacePath=$validate_root and outputPath=$output_root.
-Run the downloaded validation workflow once, process every discovered hosted
-agent, write every report pair under outputPath, and return its batch summary.$rules_prompt"
+agent_key="$(printf '%s' "$agent_root" | sha256sum | cut -c1-8)"
+report_id="github-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${agent_key}"
+artifact_name="foundry-validation-$report_id"
+echo "artifact-name=$artifact_name" >> "$GITHUB_OUTPUT"
+prompt="Use the /validate-foundry-ci skill with agentPath=$agent_root, outputPath=$output_root, and reportId=$report_id.
+Run the downloaded validation workflow exactly once for this agent, write one
+report pair under outputPath, and return the report paths.$rules_prompt"
 
 set +e
 copilot_args=(
-  -C "$validate_root"
+  -C "$agent_root"
   --prompt "$prompt"
   --add-dir "$skill_root"
   --add-dir "$output_root"
@@ -278,8 +282,17 @@ reports_file="$RUNNER_TEMP/foundry-validation-reports.txt"
 artifact_root="$RUNNER_TEMP/foundry-validation-artifacts"
 mkdir -p "$artifact_root"
 find "$output_root" -maxdepth 1 -type f \
-  -name 'validation-*.md' -print0 |
+  -name "validation-$report_id*.md" -print0 |
   sort -z > "$reports_file"
+
+expected_report_count="$(
+  find "$output_root" -maxdepth 1 -type f \
+    -name "validation-$report_id*.md" -printf '.' | wc -c | tr -d ' '
+)"
+if [[ "$expected_report_count" -ne 1 ]]; then
+  echo "::error::Expected exactly one Markdown report, found $expected_report_count"
+  exit 1
+fi
 
 report_count=0
 overall_status="$copilot_status"
@@ -323,7 +336,7 @@ while IFS= read -r -d '' json_report; do
   esac
 done < <(
   find "$output_root" -maxdepth 1 -type f \
-    -name 'validation-*.json' -print0 | sort -z
+    -name "validation-$report_id*.json" -print0 | sort -z
 )
 
 while IFS= read -r -d '' merged_rules; do
@@ -337,12 +350,8 @@ while IFS= read -r -d '' merged_rules; do
   esac
 done < <(
   find "$output_root" -maxdepth 1 -type f \
-    -name 'agent-validation-*-rules.yaml' -print0 | sort -z
+    -name "agent-validation-$report_id-rules.yaml" -print0 | sort -z
 )
 
-if [[ "$report_count" -eq 0 ]]; then
-  echo "::error::No validation reports were produced"
-  exit 1
-fi
-echo "Generated $report_count hosted-agent validation report(s)."
+echo "Generated one hosted-agent validation report."
 exit "$overall_status"

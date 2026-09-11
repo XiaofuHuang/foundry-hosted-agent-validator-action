@@ -13,7 +13,7 @@ name: Validate Foundry agent
 
 on:
   pull_request:
-    paths: [azure.yaml, "src/**"]
+    paths: ["agents/my-agent/**"]
 
 permissions:
   contents: read
@@ -29,31 +29,28 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
-      - uses: XiaofuHuang/foundry-hosted-agent-validator-action@v4.5.1
+      - uses: XiaofuHuang/foundry-hosted-agent-validator-action@v5.0.0
         with:
           github-token: ${{ github.token }}
+          agent-path: agents/my-agent
           rules-file: foundry/agent-validation-rules.yaml
 ```
 
-The validation workflow recursively finds every `azure.yaml` below
-`validate-path` and validates each `azure.ai.agent` service separately.
-Reports use its shared `outputPath`, the Action uploads all JSON/Markdown
-pairs and the merged `agent-validation-<reportId>-rules.yaml`, and each
-Markdown report is posted unchanged as a new PR comment.
+Each Action invocation validates exactly one hosted agent. It generates one
+Markdown report, uploads its report files and merged rules, and posts the
+generated Markdown unchanged as one PR comment.
 
 The Action uses the Copilot process result and generated Markdown reports as
 its status. JSON reports are uploaded when present but are not checked or
-required. It does not parse the validation workflow's batch outcome, so a
-partial batch may remain advisory when at least one Markdown report is
-generated.
+required. Exactly one Markdown report is required per invocation.
 
 ## Inputs
 
 | Input | Default | Purpose |
 |---|---|---|
 | `github-token` | Required | Runs Copilot and posts PR comments |
-| `validate-path` | `.` | Passed to the validation workflow as `workspacePath` |
-| `rules-file` | Empty | Local path relative to `validate-path`, or public HTTPS URL returning raw YAML |
+| `agent-path` | `.` | Passed to the validation workflow as `agentPath` |
+| `rules-file` | Empty | Local path relative to `agent-path`, or public HTTPS URL returning raw YAML |
 
 Examples:
 
@@ -65,13 +62,16 @@ rules-file: foundry/agent-validation-rules.yaml
 rules-file: https://raw.githubusercontent.com/owner/repo/main/rules.yaml
 ```
 
-Local rules must resolve inside `validate-path` and cannot be symbolic links.
+Local rules must resolve inside `agent-path` and cannot be symbolic links.
 Remote rules must be public raw content over HTTPS, resolve to a public IPv4
 address, return HTTP 200 without redirects, and are limited to 1 MiB and a
 30-second transfer.
 
-When supplied, `rules-file` is merged over workspace custom rules and default
+When supplied, `rules-file` is merged over agent custom rules and default
 rules. Matching rule IDs are replaced by the caller rule.
+
+For multiple agents, call the Action once per agent with separate jobs or a
+matrix. Each invocation still validates only one agent.
 
 ## Scope
 

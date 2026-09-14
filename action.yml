@@ -11,7 +11,7 @@ inputs:
     required: false
     default: .
   rules-file:
-    description: Optional local path relative to agent-path or public HTTPS URL.
+    description: Optional local path or raw.githubusercontent.com URL.
     required: false
     default: ""
 outputs:
@@ -41,6 +41,20 @@ runs:
         INPUT_AGENT_PATH: ${{ inputs.agent-path }}
         INPUT_RULES_FILE: ${{ inputs.rules-file }}
       run: node "${{ github.action_path }}/scripts/prepare.mjs"
+
+    - name: Download caller rules from GitHub
+      if: ${{ steps.prepare.outputs.rules-endpoint != '' }}
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        RULES_ENDPOINT: ${{ steps.prepare.outputs.rules-endpoint }}
+        RULES_FILE: ${{ steps.prepare.outputs.rules-file }}
+      run: |
+        set -euo pipefail
+        gh api \
+          --header "Accept: application/vnd.github.raw+json" \
+          "$RULES_ENDPOINT" > "$RULES_FILE"
+        test -s "$RULES_FILE"
 
     - name: Download and register Foundry validation skill
       shell: bash

@@ -36,6 +36,7 @@ jobs:
           grep -F 'copilot skill add "$skill_parent"' scripts/fetch-skill.sh
           grep -F 'COPILOT_HOME:' action.yml
           grep -F -- '--allow-tool=write' action.yml
+          grep -F 'gh api' action.yml
           test "$(grep -c -F 'actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3' action.yml)" -eq 1
           grep -F 'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a' action.yml
           grep -F 'github.rest.issues.createComment' action.yml

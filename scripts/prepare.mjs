@@ -3,8 +3,6 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { downloadRemoteRules } from "./remote-rules.mjs";
-
 function requireValue(env, name) {
   const value = env[name];
   if (!value) {
@@ -62,7 +60,38 @@ function appendOutputs(outputFile, outputs) {
   return fs.appendFile(outputFile, `${content}\n`);
 }
 
-export async function prepare(env = process.env, dependencies = {}) {
+export function parseGitHubRulesUrl(value) {
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error("Remote rules-file must be a valid GitHub raw URL");
+  }
+  if (
+    url.protocol !== "https:" ||
+    url.hostname !== "raw.githubusercontent.com" ||
+    url.username ||
+    url.password ||
+    url.port ||
+    url.search ||
+    url.hash
+  ) {
+    throw new Error("Remote rules-file must use raw.githubusercontent.com");
+  }
+
+  const parts = url.pathname
+    .split("/")
+    .filter(Boolean)
+    .map((part) => decodeURIComponent(part));
+  if (parts.length < 4 || parts.some((part) => !part)) {
+    throw new Error("Remote rules-file must include owner, repository, ref, and path");
+  }
+  const [owner, repository, ref, ...fileParts] = parts;
+  const filePath = fileParts.map(encodeURIComponent).join("/");
+  return `repos/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/contents/${filePath}?ref=${encodeURIComponent(ref)}`;
+}
+
+export async function prepare(env = process.env) {
   requireValue(env, "INPUT_GITHUB_TOKEN");
   const workspace = await fs.realpath(requireValue(env, "GITHUB_WORKSPACE"));
   const runnerTemp = path.resolve(requireValue(env, "RUNNER_TEMP"));
@@ -87,20 +116,23 @@ export async function prepare(env = process.env, dependencies = {}) {
 
   let rulesFile = "";
   let rulesRoot = "";
+  let rulesEndpoint = "";
   const rulesInput = env.INPUT_RULES_FILE || "";
   if (rulesInput) {
     if (rulesInput.startsWith("https://")) {
       rulesRoot = path.join(runtimeRoot, "rules");
       rulesFile = path.join(rulesRoot, "custom-rules.yaml");
-      const downloader = dependencies.downloadRemoteRules || downloadRemoteRules;
-      await downloader(rulesInput, rulesFile);
+      rulesEndpoint = parseGitHubRulesUrl(rulesInput);
+      await fs.mkdir(rulesRoot, { recursive: true });
     } else if (rulesInput.includes("://") || path.isAbsolute(rulesInput)) {
-      throw new Error("rules-file must be relative to agent-path or use public HTTPS");
+      throw new Error(
+        "rules-file must be relative to agent-path or use a GitHub raw URL",
+      );
     } else {
       rulesFile = await resolveLocalRules(agentRoot, rulesInput);
     }
 
-    if ((await fs.stat(rulesFile)).size === 0) {
+    if (!rulesEndpoint && (await fs.stat(rulesFile)).size === 0) {
       throw new Error("rules-file must not be empty");
     }
   }
@@ -122,6 +154,8 @@ export async function prepare(env = process.env, dependencies = {}) {
     "output-root": outputRoot,
     "prompt-file": promptFile,
     "report-id": reportId,
+    "rules-endpoint": rulesEndpoint,
+    "rules-file": rulesFile,
     "rules-root": rulesRoot,
     "runtime-root": runtimeRoot,
   };

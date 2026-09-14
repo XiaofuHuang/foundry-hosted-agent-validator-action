@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { prepare } from "../scripts/prepare.mjs";
+import { parseGitHubRulesUrl, prepare } from "../scripts/prepare.mjs";
 
 async function fixture(t) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "foundry-prepare-"));
@@ -56,27 +56,23 @@ test("prepares an isolated single-agent validation", async (t) => {
   );
 });
 
-test("downloads HTTPS caller rules into the isolated runtime", async (t) => {
+test("prepares a GitHub API download for remote rules", async (t) => {
   const paths = await fixture(t);
-  let requestedUrl;
 
   const outputs = await prepare(
     environment(paths, {
-      INPUT_RULES_FILE: "https://example.com/rules.yaml",
+      INPUT_RULES_FILE:
+        "https://raw.githubusercontent.com/owner/rules/main/path/rules.yaml",
     }),
-    {
-      async downloadRemoteRules(url, destination) {
-        requestedUrl = url;
-        await fs.mkdir(path.dirname(destination), { recursive: true });
-        await fs.writeFile(destination, "rules: []\n");
-      },
-    },
   );
 
-  assert.equal(requestedUrl, "https://example.com/rules.yaml");
   assert.equal(
-    await fs.readFile(path.join(outputs["rules-root"], "custom-rules.yaml"), "utf8"),
-    "rules: []\n",
+    outputs["rules-endpoint"],
+    "repos/owner/rules/contents/path/rules.yaml?ref=main",
+  );
+  assert.equal(
+    outputs["rules-file"],
+    path.join(outputs["rules-root"], "custom-rules.yaml"),
   );
 });
 
@@ -87,5 +83,18 @@ test("rejects agent paths outside the workspace", async (t) => {
   await assert.rejects(
     prepare(environment(paths, { INPUT_AGENT_PATH: "../outside" })),
     /agent-path must stay inside GITHUB_WORKSPACE/,
+  );
+});
+
+test("accepts only GitHub raw URLs for remote rules", () => {
+  assert.equal(
+    parseGitHubRulesUrl(
+      "https://raw.githubusercontent.com/owner/repo/v1/rules/file.yaml",
+    ),
+    "repos/owner/repo/contents/rules/file.yaml?ref=v1",
+  );
+  assert.throws(
+    () => parseGitHubRulesUrl("https://example.com/rules.yaml"),
+    /must use raw.githubusercontent.com/,
   );
 });

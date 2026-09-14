@@ -50,7 +50,7 @@ required. Exactly one Markdown report is required per invocation.
 |---|---|---|
 | `github-token` | Required | Runs Copilot and posts PR comments |
 | `agent-path` | `.` | Passed to the validation workflow as `agentPath` |
-| `rules-file` | Empty | Local path relative to `agent-path`, or public HTTPS URL returning raw YAML |
+| `rules-file` | Empty | Local path relative to `agent-path`, or `raw.githubusercontent.com` URL |
 
 Examples:
 
@@ -63,8 +63,9 @@ rules-file: https://raw.githubusercontent.com/owner/repo/main/rules.yaml
 ```
 
 Local rules must resolve to a regular file inside `agent-path`. Remote rules
-must be public raw content over HTTPS, resolve to a public IPv4 address, return
-HTTP 200 without redirects, and are limited to 1 MiB and a 30-second transfer.
+must use a `raw.githubusercontent.com/<owner>/<repo>/<ref>/<path>` URL. The
+Action converts that URL to the GitHub Contents API and downloads it with
+`gh api` using `github-token`.
 
 When supplied, `rules-file` is merged over agent custom rules and default
 rules. Matching rule IDs are replaced by the caller rule.
@@ -76,9 +77,9 @@ matrix. Each invocation still validates only one agent.
 
 The composite Action exposes each lifecycle phase as a named GitHub Actions
 step. It uses `actions/setup-node` for the runtime, `actions/github-script` for
-PR comments, and `actions/upload-artifact` for reports. Foundry-specific logic is split between small preparation, remote-rules,
-report-checking, and skill-download helpers plus declarative GitHub Actions
-steps instead of one orchestration script.
+PR comments, and `actions/upload-artifact` for reports. Foundry-specific logic is split between small preparation, report-checking,
+and skill-download helpers plus declarative GitHub Actions steps instead of
+one orchestration script.
 
 The Action runs Copilot with an isolated `COPILOT_HOME`, pins Copilot CLI
 `1.0.83`, then sparsely downloads only
@@ -98,7 +99,6 @@ review, not a compliance or security gate.
 The implementation is organized as:
 
 - `scripts/prepare.mjs`: inputs, paths, optional caller rules, and report IDs
-- `scripts/remote-rules.mjs`: bounded public HTTPS rule downloads
 - `scripts/fetch-skill.sh`: sparse skill download and registration
 - `action.yml`: one noninteractive Copilot CLI invocation and PR comments
 - `scripts/collect-report.mjs`: report validation

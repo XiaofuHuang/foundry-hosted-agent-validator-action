@@ -29,7 +29,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
-      - uses: XiaofuHuang/foundry-hosted-agent-validator-action@v5.0.0
+      - uses: XiaofuHuang/foundry-hosted-agent-validator-action@v5.0.2
         with:
           github-token: ${{ github.token }}
           agent-path: agents/my-agent
@@ -74,6 +74,12 @@ matrix. Each invocation still validates only one agent.
 
 ## Scope
 
+The composite Action exposes each lifecycle phase as a named GitHub Actions
+step. It uses `actions/setup-node` for the runtime, `actions/github-script` for
+PR comments, and `actions/upload-artifact` for reports. Foundry-specific logic
+is split across small preparation, skill-download, Copilot-run, and publishing
+helpers instead of one orchestration script.
+
 The Action runs Copilot with an isolated `COPILOT_HOME`, pins Copilot CLI
 `1.0.83`, then sparsely downloads only
 `plugins/azure-skills/skills/microsoft-foundry/foundry-agent/validate/` from
@@ -88,6 +94,13 @@ agent and write the report to runner temporary storage.
 This simplified version checks only that exactly one Markdown report exists.
 It does not schema-validate report contents and is intended as an advisory
 review, not a compliance or security gate.
+
+The implementation is organized as:
+
+- `scripts/prepare.mjs`: inputs, paths, optional caller rules, and report IDs
+- `scripts/fetch-skill.sh`: sparse skill download and registration
+- `scripts/run-copilot.sh`: one noninteractive Copilot CLI invocation
+- `scripts/publish.cjs`: report staging, PR comments, and final status
 
 The runtime source is controlled by the single `VALIDATION_REF` value in
 `action.yml`. Change that value to `main` when the validation update is

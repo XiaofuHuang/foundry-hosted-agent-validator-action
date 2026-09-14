@@ -14,45 +14,48 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
-      - name: Check Action files
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "24"
+      - name: Run unit tests
+        run: node --test test/*.test.*
+      - name: Check shell scripts
+        run: bash -n scripts/*.sh
+      - name: Check Action structure
         shell: bash
         run: |
           set -euo pipefail
-          bash -n run.sh
-          grep -F '@github/copilot@1.0.83' run.sh
+          test ! -e run.sh
+          grep -F '@github/copilot@1.0.83' action.yml
           grep -F 'VALIDATION_REF:' action.yml
-          grep -F -- '--branch "$VALIDATION_REF"' run.sh
-          grep -F 'plugins/azure-skills/skills/microsoft-foundry/foundry-agent/validate' run.sh
-          grep -F 'outputPath=' run.sh
-          grep -F 'agentPath=' run.sh
-          grep -F 'reportId=' run.sh
-          grep -F 'rulesFile=' run.sh
-          grep -F 'agent-validation-$report_id-rules.yaml' run.sh
+          grep -F -- '--branch "$VALIDATION_REF"' scripts/fetch-skill.sh
+          grep -F 'plugins/azure-skills/skills/microsoft-foundry/foundry-agent/validate' scripts/fetch-skill.sh
+          grep -F 'outputPath=' scripts/prepare.mjs
+          grep -F 'agentPath=' scripts/prepare.mjs
+          grep -F 'reportId=' scripts/prepare.mjs
+          grep -F 'rulesFile=' scripts/prepare.mjs
+          grep -F 'agent-validation-${escapedId}-rules' scripts/publish.cjs
           grep -F 'INPUT_RULES_FILE:' action.yml
           grep -F 'INPUT_AGENT_PATH:' action.yml
-          grep -F -- "--proto '=https' --noproxy '*'" run.sh
-          grep -F -- '--connect-timeout 10 --max-time 30' run.sh
-          grep -F 'must resolve to a public IPv4 address' run.sh
-          grep -F 'must return HTTP 200 without redirects' run.sh
-          grep -F 'Local rules-file must resolve inside agent-path' run.sh
-          grep -F 'Expected exactly one Markdown report' run.sh
+          grep -F 'must resolve to a public IPv4 address' scripts/prepare.mjs
+          grep -F 'must return HTTP 200 without redirects' scripts/prepare.mjs
+          grep -F 'Local rules-file must resolve inside agent-path' scripts/prepare.mjs
+          grep -F 'Expected exactly one Markdown report' scripts/publish.cjs
           grep -F 'name: validate-foundry-ci' skills/validate-foundry-ci/SKILL.md
-          grep -F 'copilot skill add "$skill_parent"' run.sh
-          grep -F 'export COPILOT_HOME=' run.sh
-          grep -F -- '--allow-tool=write' run.sh
-          ! grep -F 'permissions_locked' run.sh
-          ! grep -F 'chmod a-w' run.sh
-          ! grep -F 'must not contain symbolic links' run.sh
-          ! grep -F 'disableAllHooks' run.sh
-          ! grep -F 'GITHUB_COPILOT_PROMPT_MODE_REPO_HOOKS' run.sh
-          ! grep -F -- '--available-tools=' run.sh
-          ! grep -F -- '--deny-tool=' run.sh
-          ! grep -F -- '--disable-builtin-mcps' run.sh
-          ! grep -F -- '--no-custom-instructions' run.sh
-          ! grep -F 'temporary validation skill' run.sh
+          grep -F 'copilot skill add "$SKILL_PARENT"' scripts/fetch-skill.sh
+          grep -F 'COPILOT_HOME:' action.yml
+          grep -F -- '--allow-tool=write' scripts/run-copilot.sh
+          grep -F 'actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3' action.yml
+          grep -F 'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a' action.yml
+          ! grep -R -F 'permissions_locked' scripts action.yml
+          ! grep -R -F 'chmod a-w' scripts action.yml
+          ! grep -R -F -- '--deny-tool=' scripts action.yml
+          ! grep -R -F -- '--disable-builtin-mcps' scripts action.yml
+          ! grep -R -F -- '--no-custom-instructions' scripts action.yml
           ! grep -F 'Never use shell' skills/validate-foundry-ci/SKILL.md
-          ! grep -F 'azd' run.sh
-          ! grep -F 'copilot plugin install' run.sh
+          ! grep -R -F 'azd' scripts action.yml
+          ! grep -R -F 'copilot plugin install' scripts action.yml
           grep -F 'pull-requests: write' README.md
           grep -F 'copilot-requests: write' README.md
           test "$(find skills/validate-foundry-ci -type f | wc -l)" -eq 1

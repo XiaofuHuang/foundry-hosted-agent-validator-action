@@ -14,26 +14,91 @@ inputs:
     description: Optional local path relative to agent-path or public HTTPS URL.
     required: false
     default: ""
+outputs:
+  artifact-name:
+    description: Name of the uploaded validation artifact.
+    value: ${{ steps.prepare.outputs.artifact-name }}
+  report-path:
+    description: Path to the generated Markdown report.
+    value: ${{ steps.publish.outputs.report-path }}
 runs:
   using: composite
   steps:
-    - name: Validate Microsoft Foundry hosted agent
-      id: validate
+    - name: Set up Node.js
+      id: setup
+      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+      with:
+        node-version: "24"
+
+    - name: Install Copilot CLI
+      id: install
+      shell: bash
+      run: npm install --global --no-audit --no-fund @github/copilot@1.0.83
+
+    - name: Prepare validation
+      id: prepare
       shell: bash
       env:
         INPUT_GITHUB_TOKEN: ${{ inputs.github-token }}
         INPUT_AGENT_PATH: ${{ inputs.agent-path }}
         INPUT_RULES_FILE: ${{ inputs.rules-file }}
-        ACTION_PATH: ${{ github.action_path }}
+      run: node "${{ github.action_path }}/scripts/prepare.mjs"
+
+    - name: Download and register Foundry validation skill
+      id: skill
+      shell: bash
+      env:
+        COPILOT_AUTO_UPDATE: "false"
+        COPILOT_HOME: ${{ steps.prepare.outputs.copilot-home }}
+        SKILL_PARENT: ${{ steps.prepare.outputs.skill-parent }}
+        SKILL_ROOT: ${{ steps.prepare.outputs.skill-root }}
+        SOURCE_REPO: ${{ steps.prepare.outputs.source-repo }}
         VALIDATION_REF: codex/foundry-validation-reports
-      run: bash "${{ github.action_path }}/run.sh"
+      run: bash "${{ github.action_path }}/scripts/fetch-skill.sh"
+
+    - name: Validate Microsoft Foundry hosted agent
+      id: validate
+      continue-on-error: true
+      shell: bash
+      env:
+        AGENT_ROOT: ${{ steps.prepare.outputs.agent-root }}
+        COPILOT_AUTO_UPDATE: "false"
+        COPILOT_GITHUB_TOKEN: ${{ inputs.github-token }}
+        COPILOT_HOME: ${{ steps.prepare.outputs.copilot-home }}
+        GH_TOKEN: ${{ inputs.github-token }}
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        OUTPUT_ROOT: ${{ steps.prepare.outputs.output-root }}
+        PROMPT_FILE: ${{ steps.prepare.outputs.prompt-file }}
+        RULES_ROOT: ${{ steps.prepare.outputs.rules-root }}
+        SKILL_ROOT: ${{ steps.prepare.outputs.skill-root }}
+      run: bash "${{ github.action_path }}/scripts/run-copilot.sh"
+
+    - name: Publish Foundry validation result
+      id: publish
+      if: always()
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+      env:
+        ACTION_PUBLISH_SCRIPT: ${{ github.action_path }}/scripts/publish.cjs
+        ARTIFACT_ROOT: ${{ steps.prepare.outputs.artifact-root }}
+        INSTALL_OUTCOME: ${{ steps.install.outcome }}
+        OUTPUT_ROOT: ${{ steps.prepare.outputs.output-root }}
+        PREPARE_OUTCOME: ${{ steps.prepare.outcome }}
+        REPORT_ID: ${{ steps.prepare.outputs.report-id }}
+        SETUP_OUTCOME: ${{ steps.setup.outcome }}
+        SKILL_OUTCOME: ${{ steps.skill.outcome }}
+        VALIDATION_OUTCOME: ${{ steps.validate.outcome }}
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const publish = require(process.env.ACTION_PUBLISH_SCRIPT);
+          await publish({ github, context, core });
 
     - name: Upload Foundry validation reports
       if: always()
-      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
       with:
-        name: ${{ steps.validate.outputs.artifact-name || format('foundry-validation-{0}', github.run_id) }}
-        path: ${{ runner.temp }}/foundry-validation-artifacts/**
+        name: ${{ steps.prepare.outputs.artifact-name || format('foundry-validation-{0}', github.run_id) }}
+        path: ${{ steps.prepare.outputs.artifact-root || format('{0}/foundry-validation-artifacts', runner.temp) }}
         if-no-files-found: warn
         retention-days: 7
 

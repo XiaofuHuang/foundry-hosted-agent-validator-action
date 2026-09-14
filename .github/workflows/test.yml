@@ -21,25 +21,27 @@ jobs:
       - name: Run unit tests
         run: node --test test/*.test.*
       - name: Check shell scripts
-        run: bash -n scripts/fetch-skill.sh
+        run: bash -n scripts/install-validation-skill.sh
       - name: Check Action structure
         shell: bash
         run: |
           set -euo pipefail
-          test ! -e run.sh
-          test ! -e scripts/collect-report.mjs
-          test ! -e scripts/run-copilot.sh
-          test ! -e scripts/publish.cjs
+          grep -F 'actions/setup-node@820762786026740c76f36085b0efc47a31fe5020' action.yml
           grep -F '@github/copilot@1.0.83' action.yml
-          grep -F 'VALIDATION_REF:' action.yml
-          grep -F -- '--branch "$VALIDATION_REF"' scripts/fetch-skill.sh
-          grep -F 'plugins/azure-skills/skills/microsoft-foundry/foundry-agent/validate' scripts/fetch-skill.sh
-          grep -F 'copilot skill add "$skill_parent"' scripts/fetch-skill.sh
+          grep -F 'VALIDATION_REF: codex/foundry-validation-reports' action.yml
+          grep -F -- '--branch "$VALIDATION_REF"' scripts/install-validation-skill.sh
+          grep -F 'plugins/azure-skills/skills/microsoft-foundry/foundry-agent/validate' scripts/install-validation-skill.sh
+          grep -F 'copilot skill add "$skill_parent"' scripts/install-validation-skill.sh
           grep -F 'COPILOT_HOME:' action.yml
           grep -F -- '--allow-tool=write' action.yml
           grep -F 'gh api' action.yml
           grep -F 'INPUT_GITHUB_RULES:' action.yml
           test "$(grep -c -F 'actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3' action.yml)" -eq 1
           grep -F 'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a' action.yml
+          grep -F 'VALIDATION_OUTCOME:' action.yml
+          grep -F 'const globber = await glob.create(' action.yml
+          grep -F 'Expected exactly one Markdown report' action.yml
+          grep -F 'The generated Markdown report is empty' action.yml
           grep -F 'github.rest.issues.createComment' action.yml
+          grep -F 'core.setFailed(errors.join' action.yml
           test "$(find skills/validate-foundry-ci -type f | wc -l)" -eq 1

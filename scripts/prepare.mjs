@@ -122,7 +122,6 @@ export async function prepare(env = process.env) {
 
   const outputs = {
     "agent-root": agentRoot,
-    "artifact-name": `foundry-validation-${reportId}`,
     "output-root": outputRoot,
     "report-id": reportId,
     "rules-endpoint": rulesEndpoint,

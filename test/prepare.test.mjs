@@ -47,13 +47,17 @@ test("prepares an isolated single-agent validation", async (t) => {
   assert.equal(outputs["agent-root"], await fs.realpath(paths.agent));
   assert.equal(outputs["rules-file"], await fs.realpath(rulesFile));
   assert.match(outputs["report-id"], /^github-1234-2-[0-9a-f]{8}$/);
+  assert.deepEqual(Object.keys(outputs).sort(), [
+    "agent-root",
+    "output-root",
+    "report-id",
+    "rules-endpoint",
+    "rules-file",
+    "runtime-root",
+  ]);
   assert.equal(
     (await fs.stat(path.join(outputs["runtime-root"], "copilot-home"))).isDirectory(),
     true,
-  );
-  assert.match(
-    await fs.readFile(paths.outputFile, "utf8"),
-    /artifact-name=foundry-validation-github-1234-2-/,
   );
 });
 

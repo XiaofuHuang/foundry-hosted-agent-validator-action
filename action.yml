@@ -60,7 +60,7 @@ runs:
         COPILOT_AUTO_UPDATE: "false"
         COPILOT_HOME: ${{ format('{0}/copilot-home', steps.prepare.outputs.runtime-root) }}
         RUNTIME_ROOT: ${{ steps.prepare.outputs.runtime-root }}
-        VALIDATION_REF: codex/foundry-validation-reports
+        VALIDATION_REF: main
       run: bash "${{ github.action_path }}/scripts/install-validation-skill.sh"
 
     - name: Validate Microsoft Foundry hosted agent

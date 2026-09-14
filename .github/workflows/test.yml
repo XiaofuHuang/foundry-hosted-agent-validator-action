@@ -28,7 +28,7 @@ jobs:
           set -euo pipefail
           grep -F 'actions/setup-node@820762786026740c76f36085b0efc47a31fe5020' action.yml
           grep -F '@github/copilot@1.0.83' action.yml
-          grep -F 'VALIDATION_REF: codex/foundry-validation-reports' action.yml
+          grep -F 'VALIDATION_REF: main' action.yml
           grep -F -- '--branch "$VALIDATION_REF"' scripts/install-validation-skill.sh
           grep -F 'plugins/azure-skills/skills/microsoft-foundry/foundry-agent/validate' scripts/install-validation-skill.sh
           grep -F 'copilot skill add "$skill_parent"' scripts/install-validation-skill.sh

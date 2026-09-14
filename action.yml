@@ -20,7 +20,7 @@ outputs:
     value: ${{ steps.prepare.outputs.artifact-name }}
   report-path:
     description: Path to the generated Markdown report.
-    value: ${{ steps.publish.outputs.report-path }}
+    value: ${{ steps.collect.outputs.report-path }}
 runs:
   using: composite
   steps:
@@ -71,29 +71,71 @@ runs:
         PROMPT_FILE: ${{ steps.prepare.outputs.prompt-file }}
         RULES_ROOT: ${{ steps.prepare.outputs.rules-root }}
         SKILL_ROOT: ${{ steps.prepare.outputs.skill-root }}
-      run: bash "${{ github.action_path }}/scripts/run-copilot.sh"
+      run: |
+        set -euo pipefail
+        extra_directories=()
+        if [[ -n "$RULES_ROOT" ]]; then
+          extra_directories+=(--add-dir "$RULES_ROOT")
+        fi
+        copilot \
+          -C "$AGENT_ROOT" \
+          --prompt "$(cat "$PROMPT_FILE")" \
+          --add-dir "$SKILL_ROOT" \
+          --add-dir "$OUTPUT_ROOT" \
+          "${extra_directories[@]}" \
+          --allow-tool=write \
+          --no-ask-user \
+          --no-auto-update \
+          --silent
 
-    - name: Publish Foundry validation result
-      id: publish
+    - name: Collect Foundry validation reports
+      id: collect
       if: always()
+      continue-on-error: true
+      shell: bash
+      env:
+        ARTIFACT_ROOT: ${{ steps.prepare.outputs.artifact-root }}
+        OUTPUT_ROOT: ${{ steps.prepare.outputs.output-root }}
+        REPORT_ID: ${{ steps.prepare.outputs.report-id }}
+      run: node "${{ github.action_path }}/scripts/collect-report.mjs"
+
+    - name: Publish validation report on the pull request
+      id: report-comment
+      if: ${{ always() && github.event_name == 'pull_request' && steps.collect.outputs.report-path != '' }}
       uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
       env:
-        ACTION_PUBLISH_SCRIPT: ${{ github.action_path }}/scripts/publish.cjs
-        ARTIFACT_ROOT: ${{ steps.prepare.outputs.artifact-root }}
-        INSTALL_OUTCOME: ${{ steps.install.outcome }}
-        OUTPUT_ROOT: ${{ steps.prepare.outputs.output-root }}
-        PREPARE_OUTCOME: ${{ steps.prepare.outcome }}
-        REPORT_ID: ${{ steps.prepare.outputs.report-id }}
-        SETUP_OUTCOME: ${{ steps.setup.outcome }}
-        SKILL_OUTCOME: ${{ steps.skill.outcome }}
-        VALIDATION_OUTCOME: ${{ steps.validate.outcome }}
+        REPORT_PATH: ${{ steps.collect.outputs.report-path }}
       with:
         github-token: ${{ inputs.github-token }}
         script: |
-          const publish = require(process.env.ACTION_PUBLISH_SCRIPT);
-          await publish({ github, context, core });
+          const fs = require("node:fs");
+          await github.rest.issues.createComment({
+            ...context.repo,
+            issue_number: context.payload.pull_request.number,
+            body: fs.readFileSync(process.env.REPORT_PATH, "utf8"),
+          });
+
+    - name: Publish validation failure on the pull request
+      id: failure-comment
+      if: ${{ always() && github.event_name == 'pull_request' && steps.collect.outputs.report-path == '' }}
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          await github.rest.issues.createComment({
+            ...context.repo,
+            issue_number: context.payload.pull_request.number,
+            body: [
+              "## Microsoft Foundry hosted-agent validation",
+              "",
+              "**Validation failed before any report was produced.**",
+              "",
+              `[View workflow run](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`,
+            ].join("\n"),
+          });
 
     - name: Upload Foundry validation reports
+      id: upload
       if: always()
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
       with:
@@ -101,6 +143,46 @@ runs:
         path: ${{ steps.prepare.outputs.artifact-root || format('{0}/foundry-validation-artifacts', runner.temp) }}
         if-no-files-found: warn
         retention-days: 7
+
+    - name: Complete validation
+      if: always()
+      shell: bash
+      env:
+        COLLECT_OUTCOME: ${{ steps.collect.outcome }}
+        EVENT_NAME: ${{ github.event_name }}
+        FAILURE_COMMENT_OUTCOME: ${{ steps.failure-comment.outcome }}
+        INSTALL_OUTCOME: ${{ steps.install.outcome }}
+        PREPARE_OUTCOME: ${{ steps.prepare.outcome }}
+        REPORT_COMMENT_OUTCOME: ${{ steps.report-comment.outcome }}
+        REPORT_PATH: ${{ steps.collect.outputs.report-path }}
+        SETUP_OUTCOME: ${{ steps.setup.outcome }}
+        SKILL_OUTCOME: ${{ steps.skill.outcome }}
+        UPLOAD_OUTCOME: ${{ steps.upload.outcome }}
+        VALIDATION_OUTCOME: ${{ steps.validate.outcome }}
+      run: |
+        set -euo pipefail
+        failed=false
+        for outcome in \
+          "$SETUP_OUTCOME" "$INSTALL_OUTCOME" "$PREPARE_OUTCOME" \
+          "$SKILL_OUTCOME" "$VALIDATION_OUTCOME" "$COLLECT_OUTCOME" \
+          "$UPLOAD_OUTCOME"; do
+          if [[ "$outcome" != "success" ]]; then
+            failed=true
+          fi
+        done
+        if [[ "$EVENT_NAME" == "pull_request" ]]; then
+          comment_outcome="$FAILURE_COMMENT_OUTCOME"
+          if [[ -n "$REPORT_PATH" ]]; then
+            comment_outcome="$REPORT_COMMENT_OUTCOME"
+          fi
+          if [[ "$comment_outcome" != "success" ]]; then
+            failed=true
+          fi
+        fi
+        if [[ "$failed" == "true" ]]; then
+          echo "::error::Microsoft Foundry hosted-agent validation failed"
+          exit 1
+        fi
 
 branding:
   icon: shield

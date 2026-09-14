@@ -62,10 +62,9 @@ rules-file: foundry/agent-validation-rules.yaml
 rules-file: https://raw.githubusercontent.com/owner/repo/main/rules.yaml
 ```
 
-Local rules must resolve inside `agent-path` and cannot be symbolic links.
-Remote rules must be public raw content over HTTPS, resolve to a public IPv4
-address, return HTTP 200 without redirects, and are limited to 1 MiB and a
-30-second transfer.
+Local rules must resolve to a regular file inside `agent-path`. Remote rules
+must be public raw content over HTTPS, resolve to a public IPv4 address, return
+HTTP 200 without redirects, and are limited to 1 MiB and a 30-second transfer.
 
 When supplied, `rules-file` is merged over agent custom rules and default
 rules. Matching rule IDs are replaced by the caller rule.
@@ -75,19 +74,20 @@ matrix. Each invocation still validates only one agent.
 
 ## Scope
 
-The Action pins Copilot CLI `1.0.83`, then sparsely downloads only
+The Action runs Copilot with an isolated `COPILOT_HOME`, pins Copilot CLI
+`1.0.83`, then sparsely downloads only
 `plugins/azure-skills/skills/microsoft-foundry/foundry-agent/validate/` from
 the configured `VALIDATION_REF`. This repository contains only a small
 `validate-foundry-ci/SKILL.md` CI wrapper; it does not duplicate Microsoft's
 `validate.md`, rules, schemas, or report template. The Action combines them in
 runner temporary storage, and `azd` is not installed.
 
-It asks Copilot to inspect files statically and prohibits target execution,
-target dependency installation, Canvas, shell access, and Azure access.
+It asks Copilot to run the downloaded validation workflow once for the selected
+agent and write the report to runner temporary storage.
 
-This simplified version checks only that both report files exist. It does not
-schema-validate report contents and is intended as an advisory review, not a
-compliance or security gate.
+This simplified version checks only that exactly one Markdown report exists.
+It does not schema-validate report contents and is intended as an advisory
+review, not a compliance or security gate.
 
 The runtime source is controlled by the single `VALIDATION_REF` value in
 `action.yml`. Change that value to `main` when the validation update is

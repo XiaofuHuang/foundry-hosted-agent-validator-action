@@ -9,8 +9,6 @@ fi
 export GITHUB_TOKEN="$INPUT_GITHUB_TOKEN"
 export GH_TOKEN="$INPUT_GITHUB_TOKEN"
 posted_comments=0
-permissions_locked=false
-permissions_file="$RUNNER_TEMP/foundry-validation-permissions"
 
 post_comment() {
   local body_file="$1"
@@ -34,27 +32,10 @@ post_comment() {
   posted_comments=$((posted_comments + 1))
 }
 
-restore_permissions() {
-  if [[ "$permissions_locked" != "true" || ! -f "$permissions_file" ]]; then
-    return 0
-  fi
-  while IFS= read -r -d '' entry; do
-    mode="${entry%% *}"
-    path="${entry#* }"
-    chmod "$mode" "$path"
-  done < "$permissions_file"
-  permissions_locked=false
-}
-
 finish() {
   local validation_status="$?"
   trap - EXIT
   set +e
-  restore_permissions
-  local restore_status="$?"
-  if [[ "$validation_status" -eq 0 && "$restore_status" -ne 0 ]]; then
-    validation_status="$restore_status"
-  fi
   if [[ "$validation_status" -ne 0 && "$posted_comments" -eq 0 ]]; then
     failure_comment="$RUNNER_TEMP/foundry-validation-failure.md"
     {
@@ -140,27 +121,10 @@ PY
     echo "::error::rules-file must be relative to agent-path or use public HTTPS"
     exit 1
   else
-    rules_candidate="$agent_root/$INPUT_RULES_FILE"
-    rules_lexical="$(
-      python3 - "$rules_candidate" <<'PY'
-import os
-import sys
-
-print(os.path.abspath(sys.argv[1]))
-PY
-    )"
-    case "$rules_lexical/" in
-      "$agent_root/"*) ;;
-      *)
-        echo "::error::Local rules-file must stay inside agent-path"
-        exit 1
-        ;;
-    esac
-    if [[ -L "$rules_lexical" ]]; then
-      echo "::error::Local rules-file must not be a symbolic link"
+    if ! rules_file="$(realpath -e "$agent_root/$INPUT_RULES_FILE")"; then
+      echo "::error::Local rules-file must be a regular file"
       exit 1
     fi
-    rules_file="$(realpath -e "$rules_lexical")"
     case "$rules_file/" in
       "$agent_root/"*) ;;
       *)
@@ -168,8 +132,8 @@ PY
         exit 1
         ;;
     esac
-    if [[ ! -f "$rules_file" || -L "$rules_file" ]]; then
-      echo "::error::Local rules-file must be a regular non-symbolic-link file"
+    if [[ ! -f "$rules_file" ]]; then
+      echo "::error::Local rules-file must be a regular file"
       exit 1
     fi
   fi
@@ -182,31 +146,7 @@ fi
 
 export COPILOT_HOME="$RUNNER_TEMP/foundry-validator-copilot-home"
 export COPILOT_AUTO_UPDATE=false
-export GITHUB_COPILOT_PROMPT_MODE_REPO_HOOKS=false
 mkdir -p "$COPILOT_HOME"
-printf '%s\n' '{"disableAllHooks":true,"ide":{"autoConnect":false}}' \
-  > "$COPILOT_HOME/settings.json"
-
-if find "$workspace" \
-  \( -path '*/.github/skills/*' \
-     -o -path '*/.agents/skills/*' \
-     -o -path '*/.claude/skills/*' \) \
-  -type l -print -quit | grep -q .; then
-  echo "::error::Project skill directories and files must not be symbolic links"
-  exit 1
-fi
-while IFS= read -r skill_file; do
-  if grep -Fq 'validate-foundry-ci' "$skill_file"; then
-    echo "::error::The repository must not override the temporary validation skill"
-    exit 1
-  fi
-done < <(
-  find "$workspace" \
-    \( -path '*/.github/skills/*/SKILL.md' \
-       -o -path '*/.agents/skills/*/SKILL.md' \
-       -o -path '*/.claude/skills/*/SKILL.md' \) \
-    -type f -print
-)
 
 npm install --global --no-audit --no-fund @github/copilot@1.0.83
 source_repo="$RUNNER_TEMP/github-copilot-for-azure-source"
@@ -222,26 +162,6 @@ cp -R "$source_repo/plugins/azure-skills/skills/microsoft-foundry/foundry-agent/
   "$skill_root/"
 cp "$ACTION_PATH/skills/validate-foundry-ci/SKILL.md" "$skill_root/SKILL.md"
 copilot skill add "$skill_parent"
-
-resolved_skill="$(
-  copilot skill list --json |
-    jq -r '[.[] | select(.name == "validate-foundry-ci" and .enabled == true) | .path]
-      | if length == 1 then .[0] else "" end'
-)"
-if [[ -z "$resolved_skill" || "$(realpath "$resolved_skill")" != "$(realpath "$skill_root")" ]]; then
-  echo "::error::validate-foundry-ci must resolve to the downloaded temporary skill"
-  exit 1
-fi
-
-if find "$agent_root" -type l -print -quit | grep -q .; then
-  echo "::error::agent-path must not contain symbolic links"
-  exit 1
-fi
-
-find "$agent_root" \( -type f -o -type d \) -printf '%m %p\0' > "$permissions_file"
-permissions_locked=true
-find "$agent_root" -type f -exec chmod a-w {} +
-find "$agent_root" -type d -exec chmod a-w {} +
 
 output_root="$RUNNER_TEMP/foundry-validation-output"
 mkdir -p "$output_root"
@@ -264,14 +184,9 @@ if [[ -n "$rules_root" ]]; then
   copilot_args+=(--add-dir "$rules_root")
 fi
 copilot_args+=(
-  --available-tools=view,grep,glob,edit,apply_patch,create
   --allow-tool=write
-  --deny-tool=shell
-  --deny-tool=url
-  --disable-builtin-mcps
   --no-ask-user
   --no-auto-update
-  --no-custom-instructions
   --silent
 )
 copilot "${copilot_args[@]}"

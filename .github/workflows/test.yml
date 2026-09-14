@@ -34,13 +34,23 @@ jobs:
           grep -F -- '--connect-timeout 10 --max-time 30' run.sh
           grep -F 'must resolve to a public IPv4 address' run.sh
           grep -F 'must return HTTP 200 without redirects' run.sh
-          grep -F 'Local rules-file must not be a symbolic link' run.sh
           grep -F 'Local rules-file must resolve inside agent-path' run.sh
           grep -F 'Expected exactly one Markdown report' run.sh
           grep -F 'name: validate-foundry-ci' skills/validate-foundry-ci/SKILL.md
           grep -F 'copilot skill add "$skill_parent"' run.sh
-          grep -F 'validate-foundry-ci must resolve to the downloaded temporary skill' run.sh
+          grep -F 'export COPILOT_HOME=' run.sh
           grep -F -- '--allow-tool=write' run.sh
+          ! grep -F 'permissions_locked' run.sh
+          ! grep -F 'chmod a-w' run.sh
+          ! grep -F 'must not contain symbolic links' run.sh
+          ! grep -F 'disableAllHooks' run.sh
+          ! grep -F 'GITHUB_COPILOT_PROMPT_MODE_REPO_HOOKS' run.sh
+          ! grep -F -- '--available-tools=' run.sh
+          ! grep -F -- '--deny-tool=' run.sh
+          ! grep -F -- '--disable-builtin-mcps' run.sh
+          ! grep -F -- '--no-custom-instructions' run.sh
+          ! grep -F 'temporary validation skill' run.sh
+          ! grep -F 'Never use shell' skills/validate-foundry-ci/SKILL.md
           ! grep -F 'azd' run.sh
           ! grep -F 'copilot plugin install' run.sh
           grep -F 'pull-requests: write' README.md

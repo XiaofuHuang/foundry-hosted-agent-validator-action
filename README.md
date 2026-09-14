@@ -77,9 +77,9 @@ matrix. Each invocation still validates only one agent.
 
 The composite Action exposes each lifecycle phase as a named GitHub Actions
 step. It uses `actions/setup-node` for the runtime, `actions/github-script` for
-PR comments, and `actions/upload-artifact` for reports. Foundry-specific logic is split between small preparation, report-checking,
-and skill-download helpers plus declarative GitHub Actions steps instead of
-one orchestration script.
+PR comments, and `actions/upload-artifact` for reports. Foundry-specific logic
+is split between small preparation and skill-download helpers plus declarative
+GitHub Actions steps instead of one orchestration script.
 
 The Action runs Copilot with an isolated `COPILOT_HOME`, pins Copilot CLI
 `1.0.83`, then sparsely downloads only
@@ -100,8 +100,7 @@ The implementation is organized as:
 
 - `scripts/prepare.mjs`: inputs, paths, optional caller rules, and report IDs
 - `scripts/fetch-skill.sh`: sparse skill download and registration
-- `action.yml`: one noninteractive Copilot CLI invocation and PR comments
-- `scripts/collect-report.mjs`: report validation
+- `action.yml`: Copilot execution, report validation, PR comments, and artifacts
 
 The runtime source is controlled by the single `VALIDATION_REF` value in
 `action.yml`. Change that value to `main` when the validation update is

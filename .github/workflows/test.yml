@@ -27,6 +27,7 @@ jobs:
         run: |
           set -euo pipefail
           test ! -e run.sh
+          test ! -e scripts/collect-report.mjs
           test ! -e scripts/run-copilot.sh
           test ! -e scripts/publish.cjs
           grep -F '@github/copilot@1.0.83' action.yml

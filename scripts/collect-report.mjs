@@ -37,35 +37,9 @@ async function appendOutputs(outputFile, outputs) {
   await fs.appendFile(outputFile, `${content}\n`);
 }
 
-async function copyOptionalReports(outputRoot, artifactRoot, escapedId) {
-  const jsonReports = await regularFiles(
-    outputRoot,
-    new RegExp(`^validation-${escapedId}.*\\.json$`),
-  );
-  for (const jsonReport of jsonReports) {
-    const stage = path.join(
-      artifactRoot,
-      `json-${path.basename(jsonReport, path.extname(jsonReport))}`,
-    );
-    await fs.mkdir(stage, { recursive: true });
-    await fs.copyFile(jsonReport, path.join(stage, path.basename(jsonReport)));
-  }
-
-  const rulesFiles = await regularFiles(
-    outputRoot,
-    new RegExp(`^agent-validation-${escapedId}-rules\\.yaml$`),
-  );
-  for (const rulesFile of rulesFiles) {
-    const stage = path.join(artifactRoot, "rules");
-    await fs.mkdir(stage, { recursive: true });
-    await fs.copyFile(rulesFile, path.join(stage, path.basename(rulesFile)));
-  }
-}
-
 export async function collect(env = process.env) {
   const reportId = requireValue(env, "REPORT_ID");
   const outputRoot = requireValue(env, "OUTPUT_ROOT");
-  const artifactRoot = requireValue(env, "ARTIFACT_ROOT");
   const outputFile = requireValue(env, "GITHUB_OUTPUT");
   const escapedId = escapeRegExp(reportId);
   const markdownReports = await regularFiles(
@@ -81,13 +55,6 @@ export async function collect(env = process.env) {
     errorMessage = "The generated Markdown report is empty";
   } else {
     reportPath = markdownReports[0];
-    const reportStage = path.join(artifactRoot, "report-1");
-    await fs.mkdir(reportStage, { recursive: true });
-    await fs.copyFile(
-      reportPath,
-      path.join(reportStage, path.basename(reportPath)),
-    );
-    await copyOptionalReports(outputRoot, artifactRoot, escapedId);
   }
 
   await appendOutputs(outputFile, {

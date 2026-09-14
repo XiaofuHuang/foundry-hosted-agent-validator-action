@@ -10,26 +10,23 @@ async function fixture(t) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "foundry-collect-"));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   const outputRoot = path.join(root, "output");
-  const artifactRoot = path.join(root, "artifacts");
   await fs.mkdir(outputRoot, { recursive: true });
   return {
     root,
     outputRoot,
-    artifactRoot,
     outputFile: path.join(root, "outputs.txt"),
   };
 }
 
 function environment(paths) {
   return {
-    ARTIFACT_ROOT: paths.artifactRoot,
     GITHUB_OUTPUT: paths.outputFile,
     OUTPUT_ROOT: paths.outputRoot,
     REPORT_ID: "github-1234-1-abcd1234",
   };
 }
 
-test("stages one Markdown report and optional files", async (t) => {
+test("accepts one Markdown report alongside optional files", async (t) => {
   const paths = await fixture(t);
   const id = "github-1234-1-abcd1234";
   const markdownName = `validation-${id}.md`;
@@ -42,22 +39,9 @@ test("stages one Markdown report and optional files", async (t) => {
   const result = await collect(environment(paths));
 
   assert.equal(result.reportPath, path.join(paths.outputRoot, markdownName));
+  assert.equal(await fs.readFile(path.join(paths.outputRoot, jsonName), "utf8"), "{}\n");
   assert.equal(
-    await fs.readFile(
-      path.join(paths.artifactRoot, "report-1", markdownName),
-      "utf8",
-    ),
-    "# Validation\n",
-  );
-  assert.equal(
-    await fs.readFile(
-      path.join(paths.artifactRoot, `json-validation-${id}`, jsonName),
-      "utf8",
-    ),
-    "{}\n",
-  );
-  assert.equal(
-    await fs.readFile(path.join(paths.artifactRoot, "rules", rulesName), "utf8"),
+    await fs.readFile(path.join(paths.outputRoot, rulesName), "utf8"),
     "rules: []\n",
   );
   assert.match(

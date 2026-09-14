@@ -29,7 +29,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
-      - uses: XiaofuHuang/foundry-hosted-agent-validator-action@v5.0.0
+      - uses: XiaofuHuang/foundry-hosted-agent-validator-action@v6.0.0
         with:
           github-token: ${{ github.token }}
           agent-path: agents/my-agent
@@ -50,7 +50,8 @@ required. Exactly one Markdown report is required per invocation.
 |---|---|---|
 | `github-token` | Required | Runs Copilot and posts PR comments |
 | `agent-path` | `.` | Passed to the validation workflow as `agentPath` |
-| `rules-file` | Empty | Local path relative to `agent-path`, or public HTTPS URL returning raw YAML |
+| `rules-file` | Empty | Local path relative to `agent-path` |
+| `github-rules` | Empty | GitHub file as `owner/repository/path@ref` |
 
 Examples:
 
@@ -58,21 +59,27 @@ Examples:
 # Local rules committed in the repository
 rules-file: foundry/agent-validation-rules.yaml
 
-# Public remote rules; no authentication header is sent
-rules-file: https://raw.githubusercontent.com/owner/repo/main/rules.yaml
+# Rules stored in a GitHub repository
+github-rules: owner/repo/rules.yaml@main
 ```
 
-Local rules must resolve to a regular file inside `agent-path`. Remote rules
-must be public raw content over HTTPS, resolve to a public IPv4 address, return
-HTTP 200 without redirects, and are limited to 1 MiB and a 30-second transfer.
+Local rules must resolve to a regular file inside `agent-path`. GitHub rules
+are downloaded through the GitHub Contents API with `gh api` and
+`github-token`. `rules-file` and `github-rules` cannot both be set.
 
-When supplied, `rules-file` is merged over agent custom rules and default
+When supplied, the caller rules are merged over agent custom rules and default
 rules. Matching rule IDs are replaced by the caller rule.
 
 For multiple agents, call the Action once per agent with separate jobs or a
 matrix. Each invocation still validates only one agent.
 
 ## Scope
+
+The composite Action exposes each lifecycle phase as a named GitHub Actions
+step. It uses `actions/setup-node` for the runtime, `actions/github-script` for
+PR comments, and `actions/upload-artifact` for reports. Foundry-specific logic
+is split between small preparation and skill-download helpers plus declarative
+GitHub Actions steps instead of one orchestration script.
 
 The Action runs Copilot with an isolated `COPILOT_HOME`, pins Copilot CLI
 `1.0.83`, then sparsely downloads only
@@ -88,6 +95,12 @@ agent and write the report to runner temporary storage.
 This simplified version checks only that exactly one Markdown report exists.
 It does not schema-validate report contents and is intended as an advisory
 review, not a compliance or security gate.
+
+The implementation is organized as:
+
+- `scripts/prepare.mjs`: inputs, paths, optional caller rules, and report IDs
+- `scripts/fetch-skill.sh`: sparse skill download and registration
+- `action.yml`: Copilot execution, report validation, PR comments, and artifacts
 
 The runtime source is controlled by the single `VALIDATION_REF` value in
 `action.yml`. Change that value to `main` when the validation update is

@@ -11,31 +11,159 @@ inputs:
     required: false
     default: .
   rules-file:
-    description: Optional local path relative to agent-path or public HTTPS URL.
+    description: Optional local rules path relative to agent-path.
+    required: false
+    default: ""
+  github-rules:
+    description: Optional GitHub rules file as owner/repository/path@ref.
     required: false
     default: ""
 runs:
   using: composite
   steps:
-    - name: Validate Microsoft Foundry hosted agent
-      id: validate
+    - name: Set up Node.js
+      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+      with:
+        node-version: "24"
+
+    - name: Install Copilot CLI
+      shell: bash
+      run: npm install --global --no-audit --no-fund @github/copilot@1.0.83
+
+    - name: Prepare validation
+      id: prepare
       shell: bash
       env:
+        INPUT_GITHUB_RULES: ${{ inputs.github-rules }}
         INPUT_GITHUB_TOKEN: ${{ inputs.github-token }}
         INPUT_AGENT_PATH: ${{ inputs.agent-path }}
         INPUT_RULES_FILE: ${{ inputs.rules-file }}
-        ACTION_PATH: ${{ github.action_path }}
+      run: node "${{ github.action_path }}/scripts/prepare.mjs"
+
+    - name: Download caller rules from GitHub
+      if: ${{ steps.prepare.outputs.rules-endpoint != '' }}
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        RULES_ENDPOINT: ${{ steps.prepare.outputs.rules-endpoint }}
+        RULES_FILE: ${{ steps.prepare.outputs.rules-file }}
+      run: |
+        set -euo pipefail
+        gh api \
+          --header "Accept: application/vnd.github.raw+json" \
+          "$RULES_ENDPOINT" > "$RULES_FILE"
+        test -s "$RULES_FILE"
+
+    - name: Download and register Foundry validation skill
+      shell: bash
+      env:
+        COPILOT_AUTO_UPDATE: "false"
+        COPILOT_HOME: ${{ format('{0}/copilot-home', steps.prepare.outputs.runtime-root) }}
+        RUNTIME_ROOT: ${{ steps.prepare.outputs.runtime-root }}
         VALIDATION_REF: codex/foundry-validation-reports
-      run: bash "${{ github.action_path }}/run.sh"
+      run: bash "${{ github.action_path }}/scripts/fetch-skill.sh"
+
+    - name: Validate Microsoft Foundry hosted agent
+      id: validate
+      continue-on-error: true
+      shell: bash
+      env:
+        AGENT_ROOT: ${{ steps.prepare.outputs.agent-root }}
+        COPILOT_HOME: ${{ format('{0}/copilot-home', steps.prepare.outputs.runtime-root) }}
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        OUTPUT_ROOT: ${{ steps.prepare.outputs.output-root }}
+        REPORT_ID: ${{ steps.prepare.outputs.report-id }}
+        RULES_FILE: ${{ steps.prepare.outputs.rules-file }}
+        SKILL_ROOT: ${{ format('{0}/skills/validate-foundry-ci', steps.prepare.outputs.runtime-root) }}
+      run: |
+        set -euo pipefail
+        extra_directories=()
+        rules_prompt=""
+        if [[ -n "$RULES_FILE" ]]; then
+          extra_directories+=(--add-dir "$(dirname "$RULES_FILE")")
+          rules_prompt=" Use rulesFile=$RULES_FILE as the explicit caller rules file."
+        fi
+        printf -v prompt '%s\n%s\n%s' \
+          "Use the /validate-foundry-ci skill with agentPath=$AGENT_ROOT, outputPath=$OUTPUT_ROOT, and reportId=$REPORT_ID." \
+          "Run the downloaded validation workflow exactly once for this agent, write one" \
+          "report pair under outputPath, and return the report paths.$rules_prompt"
+        copilot \
+          -C "$AGENT_ROOT" \
+          --prompt "$prompt" \
+          --add-dir "$SKILL_ROOT" \
+          --add-dir "$OUTPUT_ROOT" \
+          "${extra_directories[@]}" \
+          --allow-tool=write \
+          --no-ask-user \
+          --no-auto-update \
+          --silent
+
+    - name: Check and publish validation result
+      if: always()
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+      env:
+        OUTPUT_ROOT: ${{ steps.prepare.outputs.output-root }}
+        REPORT_ID: ${{ steps.prepare.outputs.report-id }}
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const fs = require("node:fs");
+          const path = require("node:path");
+          const errors = [];
+          let reportPath = "";
+          if (!process.env.OUTPUT_ROOT || !process.env.REPORT_ID) {
+            errors.push("Validation preparation did not produce report paths");
+          } else {
+            const escapedId = process.env.REPORT_ID.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+            const pattern = new RegExp(`^validation-${escapedId}.*\\.md$`);
+            const reports = fs.existsSync(process.env.OUTPUT_ROOT)
+              ? fs.readdirSync(process.env.OUTPUT_ROOT, { withFileTypes: true })
+                  .filter(entry => entry.isFile() && pattern.test(entry.name))
+                  .map(entry => path.join(process.env.OUTPUT_ROOT, entry.name))
+              : [];
+            if (reports.length !== 1) {
+              errors.push(`Expected exactly one Markdown report, found ${reports.length}`);
+            } else if (fs.statSync(reports[0]).size === 0) {
+              errors.push("The generated Markdown report is empty");
+            } else {
+              reportPath = reports[0];
+            }
+          }
+          const body = reportPath
+            ? fs.readFileSync(reportPath, "utf8")
+            : [
+                "## Microsoft Foundry hosted-agent validation",
+                "",
+                "**Validation failed before any report was produced.**",
+                "",
+                `[View workflow run](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`,
+              ].join("\n");
+          if (context.eventName === "pull_request") {
+            await github.rest.issues.createComment({
+              ...context.repo,
+              issue_number: context.payload.pull_request.number,
+              body,
+            });
+          }
+          if (errors.length > 0) {
+            core.setFailed(errors.join("\n"));
+          }
 
     - name: Upload Foundry validation reports
       if: always()
-      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
       with:
-        name: ${{ steps.validate.outputs.artifact-name || format('foundry-validation-{0}', github.run_id) }}
-        path: ${{ runner.temp }}/foundry-validation-artifacts/**
+        name: ${{ steps.prepare.outputs.artifact-name || format('foundry-validation-{0}', github.run_id) }}
+        path: ${{ steps.prepare.outputs.output-root || format('{0}/foundry-validation-artifacts', runner.temp) }}
         if-no-files-found: warn
         retention-days: 7
+
+    - name: Complete validation
+      if: ${{ always() && steps.validate.outcome != 'success' }}
+      shell: bash
+      run: |
+        echo "::error::Microsoft Foundry hosted-agent validation failed"
+        exit 1
 
 branding:
   icon: shield

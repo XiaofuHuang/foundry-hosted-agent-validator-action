@@ -29,7 +29,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
-      - uses: XiaofuHuang/foundry-hosted-agent-validator-action@v5.0.2
+      - uses: XiaofuHuang/foundry-hosted-agent-validator-action@v6.0.0
         with:
           github-token: ${{ github.token }}
           agent-path: agents/my-agent
@@ -50,7 +50,8 @@ required. Exactly one Markdown report is required per invocation.
 |---|---|---|
 | `github-token` | Required | Runs Copilot and posts PR comments |
 | `agent-path` | `.` | Passed to the validation workflow as `agentPath` |
-| `rules-file` | Empty | Local path relative to `agent-path`, or `raw.githubusercontent.com` URL |
+| `rules-file` | Empty | Local path relative to `agent-path` |
+| `github-rules` | Empty | GitHub file as `owner/repository/path@ref` |
 
 Examples:
 
@@ -58,16 +59,15 @@ Examples:
 # Local rules committed in the repository
 rules-file: foundry/agent-validation-rules.yaml
 
-# Public remote rules; no authentication header is sent
-rules-file: https://raw.githubusercontent.com/owner/repo/main/rules.yaml
+# Rules stored in a GitHub repository
+github-rules: owner/repo/rules.yaml@main
 ```
 
-Local rules must resolve to a regular file inside `agent-path`. Remote rules
-must use a `raw.githubusercontent.com/<owner>/<repo>/<ref>/<path>` URL. The
-Action converts that URL to the GitHub Contents API and downloads it with
-`gh api` using `github-token`.
+Local rules must resolve to a regular file inside `agent-path`. GitHub rules
+are downloaded through the GitHub Contents API with `gh api` and
+`github-token`. `rules-file` and `github-rules` cannot both be set.
 
-When supplied, `rules-file` is merged over agent custom rules and default
+When supplied, the caller rules are merged over agent custom rules and default
 rules. Matching rule IDs are replaced by the caller rule.
 
 For multiple agents, call the Action once per agent with separate jobs or a

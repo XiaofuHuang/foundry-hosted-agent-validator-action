@@ -60,33 +60,18 @@ function appendOutputs(outputFile, outputs) {
   return fs.appendFile(outputFile, `${content}\n`);
 }
 
-export function parseGitHubRulesUrl(value) {
-  let url;
-  try {
-    url = new URL(value);
-  } catch {
-    throw new Error("Remote rules-file must be a valid GitHub raw URL");
+export function parseGitHubRules(value) {
+  const separator = value.lastIndexOf("@");
+  if (separator <= 0 || separator === value.length - 1) {
+    throw new Error("github-rules must use owner/repository/path@ref");
   }
-  if (
-    url.protocol !== "https:" ||
-    url.hostname !== "raw.githubusercontent.com" ||
-    url.username ||
-    url.password ||
-    url.port ||
-    url.search ||
-    url.hash
-  ) {
-    throw new Error("Remote rules-file must use raw.githubusercontent.com");
+  const source = value.slice(0, separator);
+  const ref = value.slice(separator + 1);
+  const parts = source.split("/");
+  if (parts.length < 3 || parts.some((part) => !part) || !ref) {
+    throw new Error("github-rules must use owner/repository/path@ref");
   }
-
-  const parts = url.pathname
-    .split("/")
-    .filter(Boolean)
-    .map((part) => decodeURIComponent(part));
-  if (parts.length < 4 || parts.some((part) => !part)) {
-    throw new Error("Remote rules-file must include owner, repository, ref, and path");
-  }
-  const [owner, repository, ref, ...fileParts] = parts;
+  const [owner, repository, ...fileParts] = parts;
   const filePath = fileParts.map(encodeURIComponent).join("/");
   return `repos/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/contents/${filePath}?ref=${encodeURIComponent(ref)}`;
 }
@@ -108,55 +93,40 @@ export async function prepare(env = process.env) {
     reportId,
   );
   const copilotHome = path.join(runtimeRoot, "copilot-home");
-  const promptFile = path.join(runtimeRoot, "prompt.txt");
   await Promise.all([
     fs.mkdir(outputRoot, { recursive: true }),
     fs.mkdir(copilotHome, { recursive: true }),
   ]);
 
   let rulesFile = "";
-  let rulesRoot = "";
   let rulesEndpoint = "";
-  const rulesInput = env.INPUT_RULES_FILE || "";
-  if (rulesInput) {
-    if (rulesInput.startsWith("https://")) {
-      rulesRoot = path.join(runtimeRoot, "rules");
-      rulesFile = path.join(rulesRoot, "custom-rules.yaml");
-      rulesEndpoint = parseGitHubRulesUrl(rulesInput);
-      await fs.mkdir(rulesRoot, { recursive: true });
-    } else if (rulesInput.includes("://") || path.isAbsolute(rulesInput)) {
-      throw new Error(
-        "rules-file must be relative to agent-path or use a GitHub raw URL",
-      );
-    } else {
-      rulesFile = await resolveLocalRules(agentRoot, rulesInput);
+  const localRules = env.INPUT_RULES_FILE || "";
+  const githubRules = env.INPUT_GITHUB_RULES || "";
+  if (localRules && githubRules) {
+    throw new Error("rules-file and github-rules cannot both be set");
+  }
+  if (localRules) {
+    if (localRules.includes("://") || path.isAbsolute(localRules)) {
+      throw new Error("rules-file must be relative to agent-path");
     }
-
-    if (!rulesEndpoint && (await fs.stat(rulesFile)).size === 0) {
+    rulesFile = await resolveLocalRules(agentRoot, localRules);
+    if ((await fs.stat(rulesFile)).size === 0) {
       throw new Error("rules-file must not be empty");
     }
+  } else if (githubRules) {
+    const rulesRoot = path.join(runtimeRoot, "rules");
+    rulesFile = path.join(rulesRoot, "custom-rules.yaml");
+    rulesEndpoint = parseGitHubRules(githubRules);
+    await fs.mkdir(rulesRoot, { recursive: true });
   }
-
-  const rulesPrompt = rulesFile
-    ? ` Use rulesFile=${rulesFile} as the explicit caller rules file.`
-    : "";
-  const prompt = [
-    `Use the /validate-foundry-ci skill with agentPath=${agentRoot}, outputPath=${outputRoot}, and reportId=${reportId}.`,
-    "Run the downloaded validation workflow exactly once for this agent, write one",
-    `report pair under outputPath, and return the report paths.${rulesPrompt}`,
-  ].join("\n");
-  await fs.writeFile(promptFile, prompt);
 
   const outputs = {
     "agent-root": agentRoot,
     "artifact-name": `foundry-validation-${reportId}`,
-    "copilot-home": copilotHome,
     "output-root": outputRoot,
-    "prompt-file": promptFile,
     "report-id": reportId,
     "rules-endpoint": rulesEndpoint,
     "rules-file": rulesFile,
-    "rules-root": rulesRoot,
     "runtime-root": runtimeRoot,
   };
   await appendOutputs(outputFile, outputs);

@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { parseGitHubRulesUrl, prepare } from "../scripts/prepare.mjs";
+import { parseGitHubRules, prepare } from "../scripts/prepare.mjs";
 
 async function fixture(t) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "foundry-prepare-"));
@@ -27,6 +27,7 @@ function environment(paths, overrides = {}) {
     GITHUB_RUN_ID: "1234",
     GITHUB_WORKSPACE: paths.workspace,
     INPUT_AGENT_PATH: "agent",
+    INPUT_GITHUB_RULES: "",
     INPUT_GITHUB_TOKEN: "test-token",
     INPUT_RULES_FILE: "",
     RUNNER_TEMP: path.join(paths.root, "runner"),
@@ -44,11 +45,11 @@ test("prepares an isolated single-agent validation", async (t) => {
   );
 
   assert.equal(outputs["agent-root"], await fs.realpath(paths.agent));
+  assert.equal(outputs["rules-file"], await fs.realpath(rulesFile));
   assert.match(outputs["report-id"], /^github-1234-2-[0-9a-f]{8}$/);
-  assert.ok(outputs["copilot-home"].startsWith(path.join(paths.root, "runner")));
-  assert.match(
-    await fs.readFile(outputs["prompt-file"], "utf8"),
-    /rulesFile=.*rules\.yaml/,
+  assert.equal(
+    (await fs.stat(path.join(outputs["runtime-root"], "copilot-home"))).isDirectory(),
+    true,
   );
   assert.match(
     await fs.readFile(paths.outputFile, "utf8"),
@@ -61,8 +62,7 @@ test("prepares a GitHub API download for remote rules", async (t) => {
 
   const outputs = await prepare(
     environment(paths, {
-      INPUT_RULES_FILE:
-        "https://raw.githubusercontent.com/owner/rules/main/path/rules.yaml",
+      INPUT_GITHUB_RULES: "owner/rules/path/rules.yaml@main",
     }),
   );
 
@@ -72,7 +72,7 @@ test("prepares a GitHub API download for remote rules", async (t) => {
   );
   assert.equal(
     outputs["rules-file"],
-    path.join(outputs["rules-root"], "custom-rules.yaml"),
+    path.join(outputs["runtime-root"], "rules", "custom-rules.yaml"),
   );
 });
 
@@ -86,15 +86,28 @@ test("rejects agent paths outside the workspace", async (t) => {
   );
 });
 
-test("accepts only GitHub raw URLs for remote rules", () => {
+test("parses GitHub rules references", () => {
   assert.equal(
-    parseGitHubRulesUrl(
-      "https://raw.githubusercontent.com/owner/repo/v1/rules/file.yaml",
-    ),
-    "repos/owner/repo/contents/rules/file.yaml?ref=v1",
+    parseGitHubRules("owner/repo/rules/file.yaml@feature/rules"),
+    "repos/owner/repo/contents/rules/file.yaml?ref=feature%2Frules",
   );
   assert.throws(
-    () => parseGitHubRulesUrl("https://example.com/rules.yaml"),
-    /must use raw.githubusercontent.com/,
+    () => parseGitHubRules("owner/repo/rules.yaml"),
+    /must use owner\/repository\/path@ref/,
+  );
+});
+
+test("rejects local and GitHub rules together", async (t) => {
+  const paths = await fixture(t);
+  await fs.writeFile(path.join(paths.agent, "rules.yaml"), "rules: []\n");
+
+  await assert.rejects(
+    prepare(
+      environment(paths, {
+        INPUT_GITHUB_RULES: "owner/repo/rules.yaml@main",
+        INPUT_RULES_FILE: "rules.yaml",
+      }),
+    ),
+    /cannot both be set/,
   );
 });

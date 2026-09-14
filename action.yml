@@ -11,7 +11,11 @@ inputs:
     required: false
     default: .
   rules-file:
-    description: Optional local path or raw.githubusercontent.com URL.
+    description: Optional local rules path relative to agent-path.
+    required: false
+    default: ""
+  github-rules:
+    description: Optional GitHub rules file as owner/repository/path@ref.
     required: false
     default: ""
 outputs:
@@ -37,6 +41,7 @@ runs:
       id: prepare
       shell: bash
       env:
+        INPUT_GITHUB_RULES: ${{ inputs.github-rules }}
         INPUT_GITHUB_TOKEN: ${{ inputs.github-token }}
         INPUT_AGENT_PATH: ${{ inputs.agent-path }}
         INPUT_RULES_FILE: ${{ inputs.rules-file }}
@@ -60,7 +65,7 @@ runs:
       shell: bash
       env:
         COPILOT_AUTO_UPDATE: "false"
-        COPILOT_HOME: ${{ steps.prepare.outputs.copilot-home }}
+        COPILOT_HOME: ${{ format('{0}/copilot-home', steps.prepare.outputs.runtime-root) }}
         RUNTIME_ROOT: ${{ steps.prepare.outputs.runtime-root }}
         VALIDATION_REF: codex/foundry-validation-reports
       run: bash "${{ github.action_path }}/scripts/fetch-skill.sh"
@@ -73,22 +78,27 @@ runs:
         AGENT_ROOT: ${{ steps.prepare.outputs.agent-root }}
         COPILOT_AUTO_UPDATE: "false"
         COPILOT_GITHUB_TOKEN: ${{ inputs.github-token }}
-        COPILOT_HOME: ${{ steps.prepare.outputs.copilot-home }}
+        COPILOT_HOME: ${{ format('{0}/copilot-home', steps.prepare.outputs.runtime-root) }}
         GH_TOKEN: ${{ inputs.github-token }}
         GITHUB_TOKEN: ${{ inputs.github-token }}
         OUTPUT_ROOT: ${{ steps.prepare.outputs.output-root }}
-        PROMPT_FILE: ${{ steps.prepare.outputs.prompt-file }}
-        RULES_ROOT: ${{ steps.prepare.outputs.rules-root }}
+        REPORT_ID: ${{ steps.prepare.outputs.report-id }}
+        RULES_FILE: ${{ steps.prepare.outputs.rules-file }}
         SKILL_ROOT: ${{ format('{0}/skills/validate-foundry-ci', steps.prepare.outputs.runtime-root) }}
       run: |
         set -euo pipefail
         extra_directories=()
-        if [[ -n "$RULES_ROOT" ]]; then
-          extra_directories+=(--add-dir "$RULES_ROOT")
+        rules_prompt=""
+        if [[ -n "$RULES_FILE" ]]; then
+          extra_directories+=(--add-dir "$(dirname "$RULES_FILE")")
+          rules_prompt=" Use rulesFile=$RULES_FILE as the explicit caller rules file."
         fi
+        prompt="Use the /validate-foundry-ci skill with agentPath=$AGENT_ROOT, outputPath=$OUTPUT_ROOT, and reportId=$REPORT_ID.
+        Run the downloaded validation workflow exactly once for this agent, write one
+        report pair under outputPath, and return the report paths.$rules_prompt"
         copilot \
           -C "$AGENT_ROOT" \
-          --prompt "$(cat "$PROMPT_FILE")" \
+          --prompt "$prompt" \
           --add-dir "$SKILL_ROOT" \
           --add-dir "$OUTPUT_ROOT" \
           "${extra_directories[@]}" \

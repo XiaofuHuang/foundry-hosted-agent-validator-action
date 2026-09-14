@@ -4,6 +4,9 @@ A small composite GitHub Action that downloads the configured Microsoft Foundry
 hosted-agent validation files at runtime and posts the Markdown report on pull
 requests.
 
+Version 6.0.2 tracks the protected upstream
+`xiaofuhuang-foundry-validation-rules` branch for its validation contract.
+
 ## Usage
 
 Add this workflow to the default branch:

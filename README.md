@@ -1,6 +1,6 @@
 # Microsoft Foundry Hosted Agent Validator
 
-A small composite GitHub Action that downloads the latest Microsoft Foundry
+A small composite GitHub Action that downloads the configured Microsoft Foundry
 hosted-agent validation files at runtime and posts the Markdown report on pull
 requests.
 
@@ -29,7 +29,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
-      - uses: XiaofuHuang/foundry-hosted-agent-validator-action@v6.0.0
+      - uses: XiaofuHuang/foundry-hosted-agent-validator-action@v6.0.1
         with:
           github-token: ${{ github.token }}
           agent-path: agents/my-agent
@@ -65,7 +65,9 @@ github-rules: owner/repo/rules.yaml@main
 
 Local rules must resolve to a regular file inside `agent-path`. GitHub rules
 are downloaded through the GitHub Contents API with `gh api` and
-`github-token`. `rules-file` and `github-rules` cannot both be set.
+`github-token`. Private cross-repository `github-rules` require a token that can
+access the target repository. `rules-file` and `github-rules` cannot both be
+set.
 
 When supplied, the caller rules are merged over agent custom rules and default
 rules. Matching rule IDs are replaced by the caller rule.
@@ -73,35 +75,26 @@ rules. Matching rule IDs are replaced by the caller rule.
 For multiple agents, call the Action once per agent with separate jobs or a
 matrix. Each invocation still validates only one agent.
 
-## Scope
+## How it works
 
-The composite Action exposes each lifecycle phase as a named GitHub Actions
-step. It uses `actions/setup-node` for the runtime, `actions/github-script` for
-PR comments, and `actions/upload-artifact` for reports. Foundry-specific logic
-is split between small preparation and skill-download helpers plus declarative
-GitHub Actions steps instead of one orchestration script.
+1. **Prepare paths.** `scripts/prepare.mjs` keeps the agent inside the workspace,
+   keeps local rules inside that agent, creates a unique report ID, and creates
+   an isolated `COPILOT_HOME` in runner temporary storage.
+2. **Optionally download GitHub rules.** `gh api` downloads `github-rules` into
+   temporary storage after preparation enforces its mutual exclusion with
+   `rules-file`.
+3. **Install the validation skill.** `scripts/install-validation-skill.sh`
+   sparsely downloads the configured `VALIDATION_REF`, overlays the single
+   `validate-foundry-ci/SKILL.md` wrapper, and registers the combined skill.
+4. **Run Copilot.** Pinned Copilot CLI `1.0.83` runs the downloaded workflow once
+   for the selected agent and writes reports to runner temporary storage.
+5. **Publish the PR result.** The Action requires exactly one non-empty Markdown
+   report and posts it unchanged on pull requests. If no usable report exists,
+   it posts a generic failure comment. An available report is still published
+   when Copilot exits nonzero, and any validation failure leaves the Action
+   unsuccessful.
+6. **Upload the artifact.** Pinned `actions/upload-artifact` runs even after
+   failure and uploads the generated report files for seven days.
 
-The Action runs Copilot with an isolated `COPILOT_HOME`, pins Copilot CLI
-`1.0.83`, then sparsely downloads only
-`plugins/azure-skills/skills/microsoft-foundry/foundry-agent/validate/` from
-the configured `VALIDATION_REF`. This repository contains only a small
-`validate-foundry-ci/SKILL.md` CI wrapper; it does not duplicate Microsoft's
-`validate.md`, rules, schemas, or report template. The Action combines them in
-runner temporary storage, and `azd` is not installed.
-
-It asks Copilot to run the downloaded validation workflow once for the selected
-agent and write the report to runner temporary storage.
-
-This simplified version checks only that exactly one Markdown report exists.
-It does not schema-validate report contents and is intended as an advisory
-review, not a compliance or security gate.
-
-The implementation is organized as:
-
-- `scripts/prepare.mjs`: inputs, paths, optional caller rules, and report IDs
-- `scripts/fetch-skill.sh`: sparse skill download and registration
-- `action.yml`: Copilot execution, report validation, PR comments, and artifacts
-
-The runtime source is controlled by the single `VALIDATION_REF` value in
-`action.yml`. Change that value to `main` when the validation update is
-published.
+The validation is an advisory review, not a compliance or security gate. JSON
+reports are uploaded when present but are not checked or required.

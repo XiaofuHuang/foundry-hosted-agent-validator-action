@@ -61,7 +61,7 @@ runs:
         COPILOT_HOME: ${{ format('{0}/copilot-home', steps.prepare.outputs.runtime-root) }}
         RUNTIME_ROOT: ${{ steps.prepare.outputs.runtime-root }}
         VALIDATION_REF: codex/foundry-validation-reports
-      run: bash "${{ github.action_path }}/scripts/fetch-skill.sh"
+      run: bash "${{ github.action_path }}/scripts/install-validation-skill.sh"
 
     - name: Validate Microsoft Foundry hosted agent
       id: validate
@@ -104,6 +104,7 @@ runs:
       env:
         OUTPUT_ROOT: ${{ steps.prepare.outputs.output-root }}
         REPORT_ID: ${{ steps.prepare.outputs.report-id }}
+        VALIDATION_OUTCOME: ${{ steps.validate.outcome }}
       with:
         github-token: ${{ inputs.github-token }}
         script: |
@@ -111,16 +112,17 @@ runs:
           const path = require("node:path");
           const errors = [];
           let reportPath = "";
+          if (process.env.VALIDATION_OUTCOME !== "success") {
+            errors.push("Microsoft Foundry hosted-agent validation failed");
+          }
           if (!process.env.OUTPUT_ROOT || !process.env.REPORT_ID) {
             errors.push("Validation preparation did not produce report paths");
           } else {
-            const escapedId = process.env.REPORT_ID.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-            const pattern = new RegExp(`^validation-${escapedId}.*\\.md$`);
-            const reports = fs.existsSync(process.env.OUTPUT_ROOT)
-              ? fs.readdirSync(process.env.OUTPUT_ROOT, { withFileTypes: true })
-                  .filter(entry => entry.isFile() && pattern.test(entry.name))
-                  .map(entry => path.join(process.env.OUTPUT_ROOT, entry.name))
-              : [];
+            const globber = await glob.create(
+              path.join(process.env.OUTPUT_ROOT, `validation-${process.env.REPORT_ID}*.md`),
+              { matchDirectories: false },
+            );
+            const reports = await globber.glob();
             if (reports.length !== 1) {
               errors.push(`Expected exactly one Markdown report, found ${reports.length}`);
             } else if (fs.statSync(reports[0]).size === 0) {
@@ -153,17 +155,10 @@ runs:
       if: always()
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
       with:
-        name: ${{ steps.prepare.outputs.artifact-name || format('foundry-validation-{0}', github.run_id) }}
+        name: foundry-validation-${{ steps.prepare.outputs.report-id || github.run_id }}
         path: ${{ steps.prepare.outputs.output-root || format('{0}/foundry-validation-artifacts', runner.temp) }}
         if-no-files-found: warn
         retention-days: 7
-
-    - name: Complete validation
-      if: ${{ always() && steps.validate.outcome != 'success' }}
-      shell: bash
-      run: |
-        echo "::error::Microsoft Foundry hosted-agent validation failed"
-        exit 1
 
 branding:
   icon: shield

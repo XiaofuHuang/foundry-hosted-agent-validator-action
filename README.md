@@ -55,6 +55,8 @@ required. Exactly one Markdown report is required per invocation.
 | `agent-path` | `.` | Passed to the validation workflow as `agentPath` |
 | `rules-file` | Empty | Local path relative to `agent-path` |
 | `github-rules` | Empty | GitHub file as `owner/repository/path@ref` |
+| `validation-repository` | `microsoft/GitHub-Copilot-for-Azure` | Repository containing the validation skill |
+| `validation-ref` | `xiaofuhuang-foundry-validation-rules` | Git ref containing the validation skill |
 
 Examples:
 
@@ -71,6 +73,10 @@ are downloaded through the GitHub Contents API with `gh api` and
 `github-token`. Private cross-repository `github-rules` require a token that can
 access the target repository. `rules-file` and `github-rules` cannot both be
 set.
+
+`validation-repository` must use `owner/repository` syntax. Override it together
+with `validation-ref` to test an unpublished validation-skill branch without
+changing the stable defaults.
 
 When supplied, the caller rules are merged over agent custom rules and default
 rules. Matching rule IDs are replaced by the caller rule.

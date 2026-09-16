@@ -18,6 +18,14 @@ inputs:
     description: Optional GitHub rules file as owner/repository/path@ref.
     required: false
     default: ""
+  validation-repository:
+    description: Repository containing the Foundry validation skill.
+    required: false
+    default: microsoft/GitHub-Copilot-for-Azure
+  validation-ref:
+    description: Git ref containing the Foundry validation skill.
+    required: false
+    default: xiaofuhuang-foundry-validation-rules
 runs:
   using: composite
   steps:
@@ -60,7 +68,8 @@ runs:
         COPILOT_AUTO_UPDATE: "false"
         COPILOT_HOME: ${{ format('{0}/copilot-home', steps.prepare.outputs.runtime-root) }}
         RUNTIME_ROOT: ${{ steps.prepare.outputs.runtime-root }}
-        VALIDATION_REF: xiaofuhuang-foundry-validation-rules
+        VALIDATION_REPOSITORY: ${{ inputs.validation-repository }}
+        VALIDATION_REF: ${{ inputs.validation-ref }}
       run: bash "${{ github.action_path }}/scripts/install-validation-skill.sh"
 
     - name: Validate Microsoft Foundry hosted agent

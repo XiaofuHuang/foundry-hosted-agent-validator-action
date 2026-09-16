@@ -28,8 +28,13 @@ jobs:
           set -euo pipefail
           grep -F 'actions/setup-node@820762786026740c76f36085b0efc47a31fe5020' action.yml
           grep -F '@github/copilot@1.0.83' action.yml
-          grep -F 'VALIDATION_REF: xiaofuhuang-foundry-validation-rules' action.yml
+          grep -F 'default: microsoft/GitHub-Copilot-for-Azure' action.yml
+          grep -F 'default: xiaofuhuang-foundry-validation-rules' action.yml
+          grep -F 'inputs.validation-repository' action.yml
+          grep -F 'inputs.validation-ref' action.yml
+          grep -F 'VALIDATION_REPOSITORY must use owner/repository' scripts/install-validation-skill.sh
           grep -F -- '--branch "$VALIDATION_REF"' scripts/install-validation-skill.sh
+          grep -F '"https://github.com/$VALIDATION_REPOSITORY.git"' scripts/install-validation-skill.sh
           grep -F 'plugins/azure-skills/skills/microsoft-foundry/foundry-agent/validate' scripts/install-validation-skill.sh
           grep -F 'copilot skill add "$skill_parent"' scripts/install-validation-skill.sh
           grep -F 'COPILOT_HOME:' action.yml

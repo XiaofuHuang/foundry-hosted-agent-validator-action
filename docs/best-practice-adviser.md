@@ -31,6 +31,10 @@ For other coding agents, Foundry DevPack installs the Microsoft Foundry Skill an
 
 ![Use Best Practice Adviser in GitHub Copilot App](images/copilot-validate-agent.png)
 
+> **Image placeholder**
+>
+> Add a screenshot showing the slash command, agent selection when applicable, and the opened report Canvas.
+
 Example:
 
 ```text
@@ -63,6 +67,10 @@ Copilot CLI returns the generated JSON and Markdown report paths. The report Can
 6. Review the generated Markdown report.
 
 ![Use Best Practice Adviser in VS Code GitHub Copilot Chat](images/vsc-validate-agent.png)
+
+> **Image placeholder**
+>
+> Add a screenshot showing the slash command in Copilot Chat and the opened Markdown report.
 
 Example:
 
@@ -172,12 +180,6 @@ To validate the sales agent:
 
 If the selected path still contains multiple hosted agents, Copilot asks you to choose one interactively. For unattended use, provide a path that identifies only one agent.
 
-![Select one agent in a multi-agent workspace](images/select-one-hosted-agent.png)
-
-> **Image placeholder**
->
-> Add a screenshot of the interactive agent selection.
-
 ### Trigger with Natural Language
 
 ```text
@@ -215,12 +217,6 @@ If you specify `outputPath`, find the report in that folder instead.
 - **GitHub Copilot App** automatically opens the validation report in the Best Practice Adviser Canvas.
 - **VS Code GitHub Copilot Chat** automatically opens the generated Markdown report in a preview.
 - **Copilot CLI and other coding agents** return the report path in their response.
-
-![Best Practice Adviser report](images/review-best-practice-adviser-report.png)
-
-> **Image placeholder**
->
-> Add a screenshot of the automatically opened report.
 
 ## Resolve Feedback
 

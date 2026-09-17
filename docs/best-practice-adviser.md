@@ -29,11 +29,7 @@ For other coding agents, Foundry DevPack installs the Microsoft Foundry Skill an
 4. Submit the command.
 5. Review the report in the Best Practice Adviser Canvas.
 
-![Use Best Practice Adviser in GitHub Copilot App](images/use-best-practice-adviser-copilot-app.png)
-
-> **Image placeholder**
->
-> Add a screenshot showing the slash command, agent selection when applicable, and the opened report Canvas.
+![Use Best Practice Adviser in GitHub Copilot App](images/copilot-validate-agent.png)
 
 Example:
 
@@ -66,11 +62,7 @@ Copilot CLI returns the generated JSON and Markdown report paths. The report Can
 5. Submit the command.
 6. Review the generated Markdown report.
 
-![Use Best Practice Adviser in VS Code GitHub Copilot Chat](images/use-best-practice-adviser-vscode.png)
-
-> **Image placeholder**
->
-> Add a screenshot showing the slash command in Copilot Chat and the opened Markdown report.
+![Use Best Practice Adviser in VS Code GitHub Copilot Chat](images/vsc-validate-agent.png)
 
 Example:
 

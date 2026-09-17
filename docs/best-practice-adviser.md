@@ -31,10 +31,6 @@ For other coding agents, Foundry DevPack installs the Microsoft Foundry Skill an
 
 ![Use Best Practice Adviser in GitHub Copilot App](images/copilot-validate-agent.png)
 
-> **Image placeholder**
->
-> Add a screenshot showing the slash command, agent selection when applicable, and the opened report Canvas.
-
 Example:
 
 ```text
@@ -67,10 +63,6 @@ Copilot CLI returns the generated JSON and Markdown report paths. The report Can
 6. Review the generated Markdown report.
 
 ![Use Best Practice Adviser in VS Code GitHub Copilot Chat](images/vsc-validate-agent.png)
-
-> **Image placeholder**
->
-> Add a screenshot showing the slash command in Copilot Chat and the opened Markdown report.
 
 Example:
 
